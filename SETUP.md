@@ -89,6 +89,22 @@ While ON DUTY, the app shows a small "Fingertip — డ్యూటీలో ఉ
 
 ---
 
+## Phase 1: app test, passenger + driver with voice (25 Nov 2026)
+
+Live on the main Rx Fingertip Supabase project (`fsftbvchnifshndssowe`). **No anonymous sign-in** and no Edge Function are needed for this phase.
+
+1. **Add a driver:** Table Editor → `drivers` → Insert row: `name`, `name_te`, `phone` (`91` + 10 digits), `auto_number`. Save; note the 6-digit `pair_code`.
+2. **Add a passenger:** Table Editor → `auto_passengers` → Insert row: `name`, `phone`. Save; note the `pair_code`.
+3. Install the **Fingertip Auto** APK on both phones (Actions → "Build driver APK" → Artifacts). It installs over the old Fingertip Driver app.
+4. Each person opens the app, chooses **Passenger** or **Auto driver**, and types phone + code once. The code then stops working; the phone keeps a private device key.
+5. Driver taps **ON DUTY** and allows Location, Notifications and Microphone. Passenger taps 🎤 and says the place (or taps a place), then **Book**.
+
+Voice: the driver's phone reads each ride aloud in Telugu and listens for "సరే / OK" (accept) or "వద్దు / no" (skip); after accepting it reads the pickup and opens Google Maps. The passenger's phone asks "ఎక్కడికి వెళ్ళాలి?" and reads out the driver's name and auto number. Telugu speech needs Google's speech services on the phone (normal on Android); if the Telugu voice isn't installed the phone speaks English.
+
+- **New phone or lost phone:** type a new 6-digit `pair_code` in that person's row and set `pair_fails` to `0`.
+- **Stop someone:** set `active` to false; their device key stops working at once.
+- How it's secured: `supabase/migrations/20261125180000_app_device_keys.sql` (only a hash of each key is stored; visitors can't read any table).
+
 ## What's tested, and what isn't yet
 
 Tested here against a real Postgres + PostGIS database:
