@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="te">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fingertip ఆటో — Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;600;800&family=Figtree:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calm, practical, big and friendly — built for drivers in sunlight and elderly passengers.
+   IDEA: a WhatsApp chat and a driver's dashboard phone, joined by a corridor map of Karimnagar.
+   PICTURE: the two phones and the live map are the picture; nothing decorative.
+   COLOUR and TYPE: light teal ground, deep teal ink, WhatsApp green for chat, one amber alert; Noto Sans Telugu + Figtree.
+   LAYOUT: three columns (passenger · map · driver) on wide screens, tabs on phones. */
+:root{color-scheme:light dark;
+ --bg:light-dark(#eef8f6,#0c1a19);--panel:light-dark(#ffffff,#132827);--ink:light-dark(#0f2e2b,#e4f4f1);
+ --muted:light-dark(#4f6f6b,#9fbcb7);--teal:light-dark(#0f766e,#3cc3b4);--teal-soft:light-dark(#d5efeb,#1b3a37);
+ --line:light-dark(#b9e0da,#2a4a47);--chat:light-dark(#e5ddd5,#0b1413);--me:light-dark(#dcf8c6,#1f4d2b);
+ --bot:light-dark(#ffffff,#1d302e);--alert:#f59e0b;--go:#16a34a;--stop:#dc2626}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans Telugu","Figtree",system-ui,sans-serif;overflow-x:clip}
+button{font:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px max(3vw,12px);background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.brand{font:800 22px/1.1 "Figtree","Noto Sans Telugu",sans-serif;color:var(--teal);display:flex;align-items:center;gap:8px}
+.brand small{font:600 13px "Noto Sans Telugu",sans-serif;color:var(--muted)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.tabs button{min-height:44px;padding:6px 14px;border-radius:22px;border:1px solid var(--line);background:transparent;color:var(--ink);font-weight:600}
+.tabs button[aria-pressed=true]{background:var(--teal);border-color:var(--teal);color:#fff}
+.pill{font-size:13px;padding:4px 10px;border-radius:12px;background:var(--teal-soft);color:var(--teal);font-weight:600;white-space:nowrap}
+main{display:grid;gap:16px;padding:16px max(3vw,12px);grid-template-columns:minmax(0,380px) minmax(0,1fr) minmax(0,380px);max-width:1400px;margin:0 auto;align-items:start}
+main[data-role=passenger]{grid-template-columns:minmax(0,420px) minmax(0,1fr)}
+main[data-role=driver]{grid-template-columns:minmax(0,1fr) minmax(0,420px)}
+main[data-role=passenger] #driverCol,main[data-role=driver] #passengerCol{display:none}
+main[data-role=driver] #mapCol{order:0}main[data-role=driver] #driverCol{order:1}
+.phone{background:var(--panel);border:1px solid var(--line);border-radius:28px;overflow:hidden;box-shadow:0 10px 30px rgb(15 118 110/.12);display:flex;flex-direction:column;height:min(760px,calc(100vh - 110px));min-height:560px;position:relative}
+.bar{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--teal);color:#fff}
+.bar .av{width:38px;height:38px;border-radius:50%;background:#fff;color:var(--teal);display:grid;place-items:center;font-weight:800;flex:none}
+.bar b{display:block;line-height:1.2}.bar span{font-size:12px;opacity:.9}
+.chat{flex:1;overflow-y:auto;background:var(--chat);padding:12px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:88%;padding:8px 11px;border-radius:10px;white-space:pre-wrap;font-size:15px;box-shadow:0 1px 1px rgb(0 0 0/.08);overflow-wrap:anywhere}
+.msg.bot{background:var(--bot);align-self:flex-start;border-top-left-radius:2px}
+.msg.me{background:var(--me);align-self:flex-end;border-top-right-radius:2px}
+.msg .t{display:block;text-align:right;font-size:11px;color:var(--muted);margin-top:2px}
+.acts{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.acts button{min-height:44px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--teal);font-weight:700;padding:8px}
+.card{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;background:var(--teal-soft)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:var(--panel);border-top:1px solid var(--line)}
+.chips button{flex:none;min-height:40px;border:1px solid var(--line);border-radius:20px;background:var(--panel);color:var(--ink);padding:4px 12px;font-size:14px}
+.compose{display:flex;gap:8px;padding:10px;background:var(--panel);align-items:center}
+.compose input{flex:1;min-height:48px;border-radius:24px;border:1px solid var(--line);padding:0 16px;font:inherit;font-size:16px;background:var(--bg);color:var(--ink)}
+.round{width:52px;height:52px;border-radius:50%;border:0;background:var(--teal);color:#fff;font-size:22px;flex:none;display:grid;place-items:center}
+.round.live{background:var(--stop);animation:pulse 1s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 10px rgb(220 38 38/.15)}}
+.mapbox{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:12px}
+.mapbox h2{font-size:18px;margin:2px 4px 8px;color:var(--teal)}
+.fig{position:relative;aspect-ratio:9/7;border-radius:14px;overflow:hidden;background:var(--teal-soft)}
+.fig svg{position:absolute;inset:0;width:100%;height:100%;touch-action:manipulation}
+.banner{position:absolute;left:10px;right:10px;bottom:10px;pointer-events:none;padding:10px 12px;border-radius:10px;background:var(--alert);color:#1f1300;font-weight:700;text-align:center;display:none}
+.banner.on{display:block}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin:10px 4px 0}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+.drv-list{margin:10px 0 0;display:grid;gap:6px}
+.drv-row{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:6px 8px;border-radius:8px;background:var(--bg)}
+.drv-row b{font-weight:600}.st{font-size:12px;font-weight:700;padding:1px 8px;border-radius:10px;white-space:nowrap}
+.st.on{background:#dcfce7;color:#166534}.st.off{background:#e5e7eb;color:#374151}.st.busy{background:#fef3c7;color:#92400e}
+.dbody{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.duty{min-height:120px;border-radius:20px;border:0;color:#fff;font-size:24px;font-weight:800;line-height:1.3}
+.duty.on{background:var(--go)}.duty.off{background:#6b7280}
+.duty small{display:block;font-size:15px;font-weight:600;opacity:.95}
+.big{min-height:56px;border-radius:14px;border:2px solid var(--teal);background:transparent;color:var(--teal);font-weight:700;font-size:17px;padding:8px 12px}
+.big.solid{background:var(--teal);color:#fff}
+.info{padding:12px 14px;border-radius:14px;background:var(--teal-soft)}
+.info h3{margin:0 0 4px;font-size:17px}
+.muted{color:var(--muted);font-size:14px}
+.form{display:grid;gap:10px}
+.form label{display:grid;gap:4px;font-size:14px;font-weight:600}
+.form input{min-height:48px;border-radius:12px;border:1px solid var(--line);padding:0 12px;font:inherit;font-size:16px;background:var(--bg);color:var(--ink)}
+.pick{display:grid;gap:8px}
+.pick button{min-height:56px;text-align:left;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px 14px}
+.alertov{position:absolute;inset:0;background:#15803d;color:#fff;display:none;flex-direction:column;padding:22px 18px;gap:14px;z-index:3}
+.alertov.on{display:flex;animation:flash 1s infinite alternate}
+@keyframes flash{to{background:#16a34a}}
+.alertov .km{font:800 56px/1 "Figtree",sans-serif}
+.alertov .dest{font-size:26px;font-weight:800;line-height:1.3}
+.timer{height:10px;border-radius:5px;background:rgb(255 255 255/.3);overflow:hidden}
+.timer i{display:block;height:100%;background:#fff;transition:width .5s linear}
+.alertov .btns{margin-top:auto;display:grid;grid-template-columns:2fr 1fr;gap:10px}
+.alertov .btns button{min-height:90px;border-radius:18px;border:0;font-size:24px;font-weight:800}
+.acc{background:#fff;color:#15803d}.skip{background:rgb(0 0 0/.25);color:#fff}
+.toast{position:absolute;left:12px;right:12px;bottom:14px;background:#111827;color:#fff;padding:12px 14px;border-radius:12px;font-weight:600;display:none;z-index:4}
+.toast.on{display:block}
+.note{max-width:1400px;margin:0 auto 24px;padding:0 max(3vw,12px);font-size:13px;color:var(--muted)}
+@media (max-width:900px){main,main[data-role]{grid-template-columns:minmax(0,1fr)}
+ main[data-role=both] #mapCol{order:3}main[data-role=driver] #driverCol{order:-1}.phone{height:auto;min-height:0}.chat{min-height:420px;max-height:60vh}.dbody{min-height:520px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">🛺 Fingertip ఆటో <small>కరీంనగర్–కోతిరాంపూర్ పైలట్</small></div>
+  <span class="pill" id="mode">లోడ్ అవుతోంది…</span>
+  <nav class="tabs" aria-label="View">
+    <button data-role="passenger">ప్రయాణికుడు · Passenger</button>
+    <button data-role="driver">డ్రైవర్ · Driver</button>
+    <button data-role="both">రెండూ · Both</button>
+  </nav>
+</header>
+
+<main id="main" data-role="both">
+  <!-- Passenger: WhatsApp-style chat -->
+  <section id="passengerCol" aria-label="Passenger">
+    <div class="phone">
+      <div class="bar"><div class="av">🛺</div><div><b>Fingertip Autos</b><span>+91 78424 49808 · WhatsApp</span></div></div>
+      <div class="chat" id="chat" aria-live="polite"></div>
+      <div class="chips" id="chips"></div>
+      <form class="compose" id="compose">
+        <input id="say" autocomplete="off" placeholder="ఎక్కడికి వెళ్ళాలి? / Where to?" aria-label="Message">
+        <button type="button" class="round" id="mic" aria-label="Voice note" hidden>🎤</button>
+        <button type="submit" class="round" aria-label="Send">➤</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Live map -->
+  <section id="mapCol" class="mapbox" aria-label="Live map">
+    <h2>లైవ్ మ్యాప్ · Live map</h2>
+    <div class="fig" id="fig">
+      <svg id="map" role="img" aria-label="Map of the Karimnagar–Kothirampur corridor with autos"></svg>
+      <div class="banner" id="banner"></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#16a34a"></i>డ్యూటీలో · On duty</span>
+      <span><i style="background:#f59e0b"></i>రైడ్‌లో · On a ride</span>
+      <span><i style="background:#9ca3af"></i>ఆఫ్ · Off duty</span>
+      <span><i style="background:#dc2626;border-radius:50%"></i>ప్రయాణికుడు · Pickup</span>
+      <span>మ్యాప్ స్థూలంగా ఉంది · Schematic map</span>
+    </div>
+    <div class="drv-list" id="drvList"></div>
+  </section>
+
+  <!-- Driver app -->
+  <section id="driverCol" aria-label="Driver">
+    <div class="phone">
+      <div class="bar"><div class="av">D</div><div><b id="dName">డ్రైవర్ యాప్</b><span id="dSub">Fingertip Driver</span></div></div>
+      <div class="dbody" id="dbody"></div>
+      <div class="alertov" id="alertov" role="alertdialog" aria-label="New ride">
+        <div style="font-size:20px;font-weight:800">🔔 కొత్త రైడ్! · New ride</div>
+        <div><div class="km" id="aKm">–</div><div>దూరం · pickup distance</div></div>
+        <div class="dest" id="aDest">–</div>
+        <div class="timer"><i id="aBar" style="width:100%"></i></div>
+        <div id="aSec" style="font-weight:700">30 సెకన్లు</div>
+        <div class="btns"><button class="acc" id="aAcc">అంగీకరించు<br><small>ACCEPT</small></button><button class="skip" id="aSkip">వద్దు<br><small>SKIP</small></button></div>
+      </div>
+      <div class="toast" id="dToast"></div>
+    </div>
+  </section>
+</main>
+<p class="note">డెమో: ఈ పేజీలో ప్రయాణికుడు, డ్రైవర్ మరియు మ్యాప్ ఒకే లైవ్ డేటాను పంచుకుంటాయి — వేర్వేరు ఫోన్లలో తెరవవచ్చు. Demo: passenger, driver and map share one live database, so they can run on different phones. WhatsApp, Sarvam and real GPS come with the backend; here voice uses your browser and location is a tap on the map. No fares — passenger and driver settle the fare themselves.</p>
+
+<script>
+{
+/* ---------- constants ---------- */
+const RADIUS_KM = 3, WINDOW_S = 30, MAX_PINGED = 5;
+const PLACES = {
+  BUS_STAND:{te:'కరీంనగర్ బస్ స్టాండ్',en:'Karimnagar Bus Stand',x:0,y:0,al:['బస్ స్టాండ్','బస్టాండ్','బస్సు స్టాండ్','బస్ స్టేషన్','bus stand','busstand','bus station']},
+  KAMAN:{te:'కమాన్',en:'Kaman',x:0.9,y:0.7,al:['కమాన్','కమాను','kaman','kamaan']},
+  CIVIL_HOSPITAL:{te:'సివిల్ హాస్పిటల్',en:'Civil Hospital',x:-0.9,y:1.0,al:['సివిల్ హాస్పిటల్','ప్రభుత్వ ఆసుపత్రి','సర్కారు దవాఖాన','సర్కార్ దవాఖాన','పెద్ద దవాఖాన','గవర్నమెంట్ హాస్పిటల్','civil hospital','government hospital','govt hospital']},
+  KOTHIRAMPUR:{te:'కోతిరాంపూర్',en:'Kothirampur',x:1.8,y:-1.5,al:['కోతిరాంపూర్','కోతిరాంపూరు','కొత్తిరాంపూర్','కొత్తరాంపూర్','కోతి రాంపూర్','kothirampur','kotirampur','kothi rampur','kotharampur']},
+  ALGUNUR:{te:'అలుగునూరు',en:'Algunur',x:4.4,y:-2.7,al:['అలుగునూరు','అలుగునూర్','అల్గునూర్','algunur','alugunur','alugunuru']},
+  HUSNABAD:{te:'హుస్నాబాద్',en:'Husnabad',x:5.6,y:1.9,al:['హుస్నాబాద్','హుస్నాబాదు','husnabad']}
+};
+// label offset [dx, dy, anchor] so names don't sit under the autos or off the edge
+const LABEL = {BUS_STAND:[12,26,'start'],HUSNABAD:[-10,-12,'end'],ALGUNUR:[-10,24,'end'],CIVIL_HOSPITAL:[-10,-12,'end'],KAMAN:[10,-12,'start'],KOTHIRAMPUR:[12,-10,'start']};
+const ROADS = [['CIVIL_HOSPITAL','BUS_STAND'],['BUS_STAND','KAMAN'],['BUS_STAND','KOTHIRAMPUR'],['KOTHIRAMPUR','ALGUNUR'],['KAMAN','HUSNABAD']];
+const SAMPLES = ['కోతిరాంపూర్ కి ఆటో కావాలి','బస్టాండ్ కు ఆటో కావాలి అన్నా','సర్కారు దవాఖాన కి పోవాలి','Kothirampur ki auto kavali','ఆటో కావాలి'];
+const VB = {x0:-2.6,x1:6.4,y0:-3.6,y1:3.4};
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const now = () => Date.now();
+const hhmm = () => new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+const ls = { get(k){try{return JSON.parse(localStorage.getItem(k))}catch{return null}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}} };
+const rid = () => Math.random().toString(36).slice(2,10) + now().toString(36);
+
+/* ---------- destination matcher (same rules as the backend) ---------- */
+const norm = (s) => (s||'').normalize('NFC').toLowerCase().replace(/[​-‍﻿]/g,'').replace(/[^\p{L}\p{M}\p{N}]+/gu,'');
+const TO = ['కి','కు','వరకు','దాకా','ki','ku','ke','varaku'].map(norm);
+function lev(a,b){if(Math.abs(a.length-b.length)>2)return 99;const d=[...Array(b.length+1).keys()];for(let i=1;i<=a.length;i++){let p=d[0];d[0]=i;for(let j=1;j<=b.length;j++){const t=d[j];d[j]=Math.min(d[j]+1,d[j-1]+1,p+(a[i-1]===b[j-1]?0:1));p=t}}return d[b.length]}
+function matchDest(text){
+  const t = norm(text); if(!t) return null;
+  let hits = [];
+  for (const [k,p] of Object.entries(PLACES)) {
+    let best=-1, len=0;
+    for (const a of p.al.map(norm)) { const i=t.lastIndexOf(a); if(i>best||(i===best&&a.length>len)){best=i;len=a.length} }
+    if (best>=0) hits.push({k,pos:best,end:best+len});
+  }
+  if (!hits.length) {
+    const words=(text||'').toLowerCase().split(/[^a-z]+/).filter(w=>w.length>=5);
+    for (const [k,p] of Object.entries(PLACES)) if (p.al.some(a=>/^[a-z]+$/.test(a)&&a.length>=5&&words.some(w=>lev(w,a)<=2))) hits.push({k,pos:0,end:0});
+  }
+  if (!hits.length) return null;
+  if (hits.length===1) return hits[0].k;
+  const marked = hits.filter(h=>TO.some(m=>t.startsWith(m,h.end)));
+  if (marked.length===1) return marked[0].k;
+  return hits.sort((a,b)=>b.pos-a.pos)[0].k;
+}
+
+/* ---------- store: live shared db, or this-device fallback ---------- */
+function localStore(){
+  const data=new Map(), subs=new Set(), leases=new Map();
+  const snap=(p)=>({id:p.split('/').pop(),exists:data.has(p),data:()=>data.get(p),metadata:{fromCache:false,hasPendingWrites:false}});
+  const fire=()=>queueMicrotask(()=>subs.forEach(s=>s()));
+  const parent=(p)=>p.split('/').slice(0,-1).join('/');
+  const docRef=(p)=>({path:p,id:p.split('/').pop(),
+    async get(){return snap(p)}, async set(v){data.set(p,structuredClone(v));fire()},
+    async update(v){if(!data.has(p))throw{code:'invalid_argument'};data.set(p,{...data.get(p),...structuredClone(v)});fire()},
+    async delete(){data.delete(p);fire()},
+    async acquire({holder,ttlMs=30000}){const l=leases.get(p);if(l&&l.until>now()&&l.holder!==holder)return{acquired:false};leases.set(p,{holder,until:now()+ttlMs});return{acquired:true}},
+    onSnapshot(next){const s=()=>next(snap(p));subs.add(s);s();return()=>subs.delete(s)},
+    collection:(c)=>colRef(p+'/'+c)});
+  const colRef=(c,filters=[])=>({path:c, doc:(id)=>docRef(c+'/'+(id||rid())),
+    where:(f,op,v)=>colRef(c,[...filters,[f,op,v]]),
+    onSnapshot(next){const s=()=>{const docs=[...data.keys()].filter(k=>parent(k)===c).map(snap).filter(d=>filters.every(([f,op,v])=>op==='=='?d.data()[f]===v:true));next({docs,size:docs.length,empty:!docs.length,docChanges:()=>[]})};subs.add(s);s();return()=>subs.delete(s)}});
+  return {doc:docRef, collection:(c)=>colRef(c)};
+}
+let db = localStore(), live = false, room = null, dict = null, liveTimer = null;
+const seedLocal = () => [
+  ['d-ravi','Ravi','రవి','TS 02 UB 4512','919800000001',0.25,0.3],
+  ['d-srinu','Srinu','శ్రీను','TS 02 UC 1188','919800000002',1.5,-1.1],
+  ['d-mahesh','Mahesh','మహేష్','TS 02 UA 7720','919800000003',-0.6,0.8]
+].forEach(([id,name,te,no,ph,x,y])=>db.doc('drivers/'+id).set({name,name_te:te,auto_number:no,phone:ph,onDuty:false,busyRide:null,x,y,stand:''}));
+seedLocal();
+
+/* ---------- shared state ---------- */
+let drivers = {};               // id -> data
+let present = null;             // Set of driver ids with the page open (room presence), or null = unknown
+let unsubDrivers = null, unsubSearching = null;
+function watchDrivers(){
+  unsubDrivers?.();
+  unsubDrivers = db.collection('drivers').onSnapshot((s)=>{
+    drivers = Object.fromEntries(s.docs.filter(d=>d.exists).map(d=>[d.id,d.data()]));
+    if (live && !s.metadata?.fromCache) { clearTimeout(liveTimer); $('#mode').textContent='🟢 లైవ్ · Live shared'; }
+    if (me.id && !drivers[me.id] && !s.metadata?.fromCache) { me.id=null; ls.set('fp-driver',null); }
+    drawMap(); renderDrvList(); renderDriver();
+  }, ()=>{});
+}
+
+/* ---------- MAP ---------- */
+const map = $('#map');
+const W = () => map.clientWidth || 600, H = () => map.clientHeight || 466;
+const px = (x) => (x-VB.x0)/(VB.x1-VB.x0)*W();
+const py = (y) => (VB.y1-y)/(VB.y1-VB.y0)*H();
+const km2px = (k) => k/(VB.x1-VB.x0)*W();
+let mapMode = null;             // 'pickup' | 'driverpos'
+let pRide = null;               // passenger's current ride doc data
+function drawMap(){
+  const w=W(), h=H(); let s='';
+  s += `<rect width="${w}" height="${h}" fill="transparent"/>`;
+  for (const [a,b] of ROADS){const A=PLACES[a],B=PLACES[b];s+=`<line x1="${px(A.x)}" y1="${py(A.y)}" x2="${px(B.x)}" y2="${py(B.y)}" stroke="currentColor" stroke-opacity=".25" stroke-width="${Math.max(6,w/90)}" stroke-linecap="round"/>`}
+  const r = pRide && pRide.pickup;
+  if (r && pRide.status==='SEARCHING') s += `<circle cx="${px(r.x)}" cy="${py(r.y)}" r="${km2px(RADIUS_KM)}" fill="#0f766e" fill-opacity=".08" stroke="#0f766e" stroke-dasharray="6 6"/>`;
+  for (const [k,p] of Object.entries(PLACES)){
+    const narrow = w < 520;
+    const L = LABEL[k] || [10,-10,'start'];
+    s += `<circle cx="${px(p.x)}" cy="${py(p.y)}" r="7" fill="#0f766e"/><text x="${px(p.x)+L[0]}" y="${py(p.y)+L[1]}" text-anchor="${L[2]}" font-size="${narrow?12:14}" font-weight="700" fill="currentColor" paint-order="stroke" stroke="var(--teal-soft)" stroke-width="4">${esc(narrow?p.te:p.te+' · '+p.en)}</text>`;
+  }
+  for (const [id,d] of Object.entries(drivers)){
+    if (d.x==null) continue;
+    const col = d.busyRide ? '#f59e0b' : d.onDuty ? '#16a34a' : '#9ca3af';
+    const mine = id===me.id;
+    s += `<g transform="translate(${px(d.x)},${py(d.y)})"><rect x="-15" y="-11" width="30" height="22" rx="7" fill="${col}" stroke="${mine?'#0f2e2b':'#fff'}" stroke-width="${mine?3:2}"/><text y="5" text-anchor="middle" font-size="13">🛺</text><text y="26" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor">${esc(d.name_te||d.name)}${mine?' (మీరు)':''}</text></g>`;
+  }
+  if (r) s += `<g transform="translate(${px(r.x)},${py(r.y)})"><path d="M0 0 C-9 -12 -12 -18 -12 -24 A12 12 0 1 1 12 -24 C12 -18 9 -12 0 0Z" fill="#dc2626" stroke="#fff" stroke-width="2"/><circle cy="-24" r="4.5" fill="#fff"/></g>`;
+  map.innerHTML = s;
+  map.style.color = getComputedStyle(document.body).color;
+}
+new ResizeObserver(drawMap).observe(map);
+map.addEventListener('click', (e)=>{
+  if (!mapMode) return;
+  const b = map.getBoundingClientRect();
+  const x = VB.x0 + (e.clientX-b.left)/b.width*(VB.x1-VB.x0);
+  const y = VB.y1 - (e.clientY-b.top)/b.height*(VB.y1-VB.y0);
+  const mode = mapMode; setMapMode(null);
+  if (mode==='pickup') pSendLocation({x:+x.toFixed(2),y:+y.toFixed(2)});
+  if (mode==='driverpos') dSetPos({x:+x.toFixed(2),y:+y.toFixed(2)});
+});
+function setMapMode(m){
+  mapMode = m;
+  const b = $('#banner');
+  b.textContent = m==='pickup' ? '📍 మీరు ఎక్కడ ఉన్నారో మ్యాప్‌పై నొక్కండి · Tap the map where you are'
+               : m==='driverpos' ? '🛺 మీ ఆటో ఎక్కడ ఉందో నొక్కండి · Tap the map where your auto is' : '';
+  b.classList.toggle('on', !!m);
+  map.style.cursor = m ? 'crosshair' : '';
+  if (m && innerWidth<=900) $('#mapCol').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function renderDrvList(){
+  const rows = Object.entries(drivers).sort((a,b)=>(b[1].onDuty-a[1].onDuty)).map(([id,d])=>{
+    const st = d.busyRide?['busy','రైడ్‌లో']:d.onDuty?['on','డ్యూటీలో']:['off','ఆఫ్'];
+    const away = d.onDuty && present && !present.has(id) ? ' · యాప్ మూసి ఉంది' : '';
+    return `<div class="drv-row"><span><b>${esc(d.name_te||d.name)}</b> · ${esc(d.auto_number)}</span><span class="st ${st[0]}">${st[1]}${away}</span></div>`;
+  });
+  $('#drvList').innerHTML = rows.join('') || '<div class="muted">ఇంకా డ్రైవర్లు లేరు · No drivers yet</div>';
+}
+
+/* ---------- PASSENGER ---------- */
+const chat = $('#chat');
+let unsubDeclines = null;
+let pStep = 'start', pDest = null, pRideId = null, unsubRide = null, pTimer = null, pLastStatus = null;
+function bot(text, acts=[], extra=''){
+  const el = document.createElement('div'); el.className='msg bot';
+  el.innerHTML = `${esc(text)}${extra}${acts.length?`<div class="acts">${acts.map((a,i)=>`<button data-i="${i}">${esc(a[0])}</button>`).join('')}</div>`:''}<span class="t">${hhmm()}</span>`;
+  el.querySelectorAll('.acts button').forEach(b=>b.onclick=()=>acts[+b.dataset.i][1]());
+  chat.append(el); chat.scrollTop = chat.scrollHeight; return el;
+}
+function mine(text){
+  const el=document.createElement('div'); el.className='msg me';
+  el.innerHTML = `${esc(text)}<span class="t">${hhmm()} ✓✓</span>`; chat.append(el); chat.scrollTop=chat.scrollHeight;
+}
+function chips(list){
+  $('#chips').innerHTML = list.map((c,i)=>`<button data-i="${i}">${esc(c[0])}</button>`).join('');
+  $('#chips').querySelectorAll('button').forEach(b=>b.onclick=()=>list[+b.dataset.i][1]());
+  $('#chips').hidden = !list.length;
+}
+const destActs = () => Object.entries(PLACES).map(([k,p])=>[`${p.te} · ${p.en}`,()=>{mine(p.te);pickDest(k)}]);
+function pStart(){
+  pStep='start'; pDest=null; pRideId=null; pRide=null; unsubRide?.(); unsubRide=null; drawMap();
+  bot('🙏 నమస్కారం! ఎక్కడికి వెళ్ళాలో 🎤 వాయిస్ మెసేజ్ పంపండి లేదా టైప్ చేయండి.\nHello! Send a voice note or type where you want to go.');
+  chips(SAMPLES.map(s=>['🎤 '+s,()=>pHeard(s,true)]));
+}
+function pHeard(text, voice){
+  text = (text||'').trim(); if (!text) return;
+  if (pStep==='searching' || pStep==='confirmed') { mine(text); bot(pStep==='searching'?'ఇంకా ఆటో కోసం వెతుకుతున్నాం, కొద్ది సెకన్లు ఆగండి.\nStill looking for your auto.':'మీ ఆటో ఇప్పటికే బుక్ అయింది.\nYour auto is already booked.'); return; }
+  mine((voice?'🎤 ':'')+text);
+  const k = matchDest(text);
+  if (!k) { bot('ఎక్కడికి వెళ్ళాలి? క్రింద ఎంచుకోండి.\nWhere do you want to go? Pick below.', destActs()); chips([]); return; }
+  pickDest(k);
+}
+function pickDest(k){
+  pDest=k; pStep='location'; chips([]);
+  const p=PLACES[k];
+  bot(`🛺 ${p.te} కి ఆటో వెతుకుతాం.\nక్రింద ఉన్న బటన్ నొక్కి మీ లొకేషన్ పంపండి.\n\nWe'll find an auto to ${p.en}. Tap the button to send your location.\n\nℹ️ ఆటో దొరికితే మీ ఫోన్ నంబర్ ఆ డ్రైవర్‌కి మాత్రమే ఇస్తాం. / Your number is shared only with the driver who accepts.`,
+    [['📍 లొకేషన్ పంపండి · Send location',()=>{ if(pStep==='location') setMapMode('pickup'); }]]);
+}
+async function pSendLocation(pt){
+  if (pStep!=='location') return;
+  mine('📍 లొకేషన్ పంపాను · Location shared'); pStep='searching';
+  const eligible = Object.entries(drivers)
+    .filter(([id,d])=>d.onDuty && !d.busyRide && d.x!=null && (!present || present.has(id) || id===me.id))
+    .map(([id,d])=>({id,km:+dist(d,pt).toFixed(2)})).filter(d=>d.km<=RADIUS_KM)
+    .sort((a,b)=>a.km-b.km).slice(0,MAX_PINGED);
+  pRideId = rid();
+  const prof = ls.get('fp-passenger') || {};
+  const ride = {code:String(Math.floor(Math.random()*10000)).padStart(4,'0'), dest:pDest, pickup:pt,
+    passenger:{name:prof.name||'ప్రయాణికుడు', phone:prof.phone||''},
+    createdAt:now(), expiresAt:now()+WINDOW_S*1000, pinged:eligible, status: eligible.length?'SEARCHING':'NO_AUTO'};
+  pRide = ride; drawMap();
+  try { await db.doc('rides/'+pRideId).set(ride); } catch(e){ bot('క్షమించండి, ఇప్పుడు కనెక్ట్ కాలేదు. మళ్ళీ ప్రయత్నించండి.\nSorry, could not connect. Please try again.'); pStep='location'; return; }
+  watchMyRide(pRideId); unsubDeclines?.(); unsubDeclines = watchDeclines(pRideId);
+  if (!eligible.length) return; // status listener reports NO_AUTO
+  bot(`🔔 దగ్గరలో ఉన్న ${eligible.length} ఆటోలకు చెప్పాము. 30 సెకన్లలో తెలియజేస్తాం.\nWe've alerted ${eligible.length} nearby auto${eligible.length>1?'s':''}. We'll tell you within 30 seconds.`);
+}
+function watchMyRide(id){
+  unsubRide?.(); pLastStatus=null;
+  unsubRide = db.doc('rides/'+id).onSnapshot((s)=>{
+    if (!s.exists || id!==pRideId) return;
+    pRide = s.data(); drawMap();
+    if (pRide.status===pLastStatus) return; pLastStatus = pRide.status;
+    if (pRide.status==='CONFIRMED') pConfirmed(pRide);
+    if (pRide.status==='NO_AUTO') { bot('😔 క్షమించండి, ఇప్పుడు 3 కి.మీ. లోపల ఆటోలు అందుబాటులో లేవు. కొద్దిసేపటి తర్వాత మళ్ళీ ప్రయత్నించండి.\nSorry, no autos are free within 3 km right now. Please try again in a few minutes.'); pDone(); }
+    if (pRide.status==='COMPLETED') { bot('✅ మీ రైడ్ పూర్తయింది. ధన్యవాదాలు! / Ride completed. Thank you!'); pDone(); }
+    if (pRide.status==='CANCELLED' && pStep!=='done') { bot('మీ రైడ్ రద్దు చేయబడింది. / Your ride has been cancelled.'); pDone(); }
+  }, ()=>{});
+}
+function pConfirmed(r){
+  pStep='confirmed'; const d=r.driver||{};
+  bot(`✅ ఆటో వస్తోంది!\nడ్రైవర్: ${d.name_te||d.name}\nఆటో నంబర్: ${d.auto_number}\nకాల్: +${d.phone}\nరైడ్ కోడ్: ${r.code}\n\nAuto confirmed! ${d.name} · ${d.auto_number}`,
+    [['❌ రైడ్ రద్దు చేయి · Cancel ride', pCancel]],
+    `<div class="card">👤 <b>${esc(d.name)} (Auto ${esc(d.auto_number)})</b><br>📞 +${esc(d.phone)}</div>`);
+}
+function pDone(){ pStep='done'; chips([['🛺 కొత్త రైడ్ · New ride',()=>{chips([]);pStart()}]]); }
+async function pCancel(){
+  if (pStep!=='confirmed' && pStep!=='searching') return;
+  pStep='done';
+  const r = pRide; await db.doc('rides/'+pRideId).update({status:'CANCELLED', closedAt:now()}).catch(()=>{});
+  if (r?.driverId) await db.doc('drivers/'+r.driverId).update({busyRide:null}).catch(()=>{});
+  mine('❌ రద్దు · Cancel');
+}
+// When the 30 s window passes and nobody has claimed the ride, close it.
+async function pTick(){
+  if (pStep!=='searching' || !pRide || pRide.status!=='SEARCHING' || now()<pRide.expiresAt) return;
+  const c = db.doc('claims/'+pRideId);
+  const l = await c.acquire({holder:'p-'+pRideId, ttlMs:4000}).catch(()=>({acquired:false}));
+  if (!l.acquired) return;                     // a driver is mid-accept: check again next tick
+  const s = await c.get();
+  if (s.exists) return;                        // a driver won
+  await c.set({driverId:null, closed:'timeout', at:now()});
+  await db.doc('rides/'+pRideId).update({status:'NO_AUTO', closedAt:now()});
+}
+// Everyone said SKIP → close early
+function watchDeclines(id){
+  return db.collection('rides/'+id+'/declines').onSnapshot(async (s)=>{
+    if (!pRide || pRide.status!=='SEARCHING' || id!==pRideId) return;
+    if (s.size >= pRide.pinged.length) {
+      const c=db.doc('claims/'+id); const l=await c.acquire({holder:'p-'+id,ttlMs:4000}).catch(()=>({acquired:false}));
+      if (!l.acquired || (await c.get()).exists) return;
+      await c.set({driverId:null, closed:'all_declined', at:now()});
+      await db.doc('rides/'+id).update({status:'NO_AUTO', closedAt:now()});
+    }
+  }, ()=>{});
+}
+$('#compose').addEventListener('submit',(e)=>{e.preventDefault(); const v=$('#say').value; $('#say').value=''; pHeard(v,false);});
+
+/* voice: browser dictation (Chrome) */
+let micText = '';
+$('#mic').addEventListener('click', ()=>{
+  if (!dict) return;
+  if ($('#mic').classList.contains('live')) { dict.stop().catch(()=>{}); return; }
+  micText=''; $('#say').value='';
+  dict.start().catch((e)=>{ $('#mic').classList.remove('live'); if (e?.code==='not_granted'||e==='not_granted') $('#mic').hidden=true; });
+});
+
+/* ---------- DRIVER ---------- */
+const me = { id: ls.get('fp-driver') };
+let alertRide = null, beepTimer = null, actx = null, myRideUnsub = null, myRide = null;
+const toast = (t) => { const el=$('#dToast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('on'),3500); };
+function unlockAudio(){ try{ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume(); }catch{} }
+function beep(){
+  if (!actx) return;
+  try{ [0,0.25].forEach(t=>{const o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=t?1320:880;g.gain.value=.12;o.connect(g);g.connect(actx.destination);o.start(actx.currentTime+t);o.stop(actx.currentTime+t+0.18);}); navigator.vibrate?.([300,150,300]); }catch{}
+}
+function renderDriver(){
+  const b = $('#dbody'); const d = me.id && drivers[me.id];
+  $('#dName').textContent = d ? (d.name_te||d.name)+' · '+d.name : 'డ్రైవర్ యాప్ · Driver app';
+  $('#dSub').textContent = d ? d.auto_number : 'Fingertip Driver';
+  if (!d) {
+    const list = Object.entries(drivers).map(([id,x])=>`<button data-id="${esc(id)}"><b>${esc(x.name_te||x.name)} · ${esc(x.name)}</b><br><span class="muted">${esc(x.auto_number)}</span></button>`).join('');
+    b.innerHTML = `<div class="info"><h3>మీరు ఎవరు? · Who are you?</h3><div class="muted">మీ పేరు ఎంచుకోండి లేదా కొత్తగా చేరండి. Pick your name or join.</div></div>
+      <div class="pick">${list}</div>
+      <form class="form" id="reg"><b>కొత్త డ్రైవర్ · New driver</b>
+        <label>పేరు · Name<input name="name" required maxlength="40"></label>
+        <label>తెలుగులో పేరు · Name in Telugu<input name="name_te" maxlength="40"></label>
+        <label>ఆటో నంబర్ · Auto number<input name="auto" required maxlength="16" placeholder="TS 02 UB 4512"></label>
+        <label>ఫోన్ · Phone<input name="phone" required inputmode="tel" pattern="[6-9][0-9]{9}" placeholder="98XXXXXXXX"></label>
+        <button class="big solid">చేరండి · Join</button></form>`;
+    b.querySelectorAll('.pick button').forEach(x=>x.onclick=()=>{ me.id=x.dataset.id; ls.set('fp-driver',me.id); renderDriver(); drawMap(); });
+    $('#reg').onsubmit = async (e)=>{ e.preventDefault(); const f=new FormData(e.target); const id='d-'+rid();
+      await db.doc('drivers/'+id).set({name:f.get('name').trim(),name_te:f.get('name_te').trim(),auto_number:f.get('auto').trim().toUpperCase(),phone:'91'+f.get('phone'),onDuty:false,busyRide:null,x:null,y:null}).catch(()=>toast('సేవ్ కాలేదు · Could not save'));
+      me.id=id; ls.set('fp-driver',id); };
+    return;
+  }
+  const on = d.onDuty;
+  let ride = '';
+  if (d.busyRide && myRide && myRide.status==='CONFIRMED') {
+    const p=PLACES[myRide.dest]; const km=d.x!=null?dist(d,myRide.pickup).toFixed(1):'–';
+    ride = `<div class="info" style="background:#fef3c7;color:#1f1300"><h3>🧍 ప్రయాణికుడిని పికప్ చేయండి · Pick up</h3>
+      <div>${esc(myRide.passenger?.name||'ప్రయాణికుడు')}${myRide.passenger?.phone?` · 📞 +91 ${esc(myRide.passenger.phone)}`:''}</div>
+      <div>📍 ${esc(km)} కి.మీ. దూరం · km away (red pin on map)</div>
+      <div>➡️ ${esc(p?p.te+' · '+p.en:'—')}</div><div class="muted" style="color:#5b4a1a">రైడ్ కోడ్ · Ride code ${esc(myRide.code)}</div></div>
+      <button class="big solid" id="done">✅ ట్రిప్ పూర్తి · Trip done</button>`;
+  }
+  b.innerHTML = `
+    <button class="duty ${on?'on':'off'}" id="duty" aria-pressed="${on}">${on?'🟢 డ్యూటీలో ఉన్నాను<small>ON DUTY · నొక్కితే ఆఫ్</small>':'⚪ ఆఫ్ డ్యూటీ<small>OFF DUTY · డ్యూటీ ప్రారంభించడానికి నొక్కండి</small>'}</button>
+    ${ride}
+    <div class="info"><h3>📍 నా స్థానం · My location</h3><div class="muted">${d.x==null?'ఇంకా సెట్ చేయలేదు · Not set yet':'మ్యాప్‌పై మీ ఆటో చూడండి · See your auto on the map'}</div></div>
+    <button class="big" id="pos">📍 మ్యాప్‌పై నా స్థానం సెట్ చేయి · Set my location</button>
+    <div class="info"><h3>${on?(d.busyRide?'🛺 రైడ్‌లో ఉన్నారు':'⏳ రైడ్‌ల కోసం వేచి ఉన్నాం'):'😴 డ్యూటీ ఆఫ్'}</h3><div class="muted">${on?'3 కి.మీ. లోపల రైడ్ వస్తే పెద్ద శబ్దంతో అలర్ట్ వస్తుంది. This page must stay open. A loud alert comes for rides within 3 km.':'డ్యూటీ ఆన్ చేస్తేనే రైడ్‌లు వస్తాయి. Turn on duty to get rides.'}</div></div>
+    <button class="big" id="switch" style="border-style:dashed">👤 వేరే డ్రైవర్ · Switch driver</button>`;
+  $('#duty').onclick = async ()=>{ unlockAudio(); if (d.busyRide && on) { toast('రైడ్ మధ్యలో ఆఫ్ చేయలేరు · Finish the ride first'); return; }
+    if (!on && d.x==null) { toast('ముందు మీ స్థానం సెట్ చేయండి · Set your location first'); setMapMode('driverpos'); }
+    await db.doc('drivers/'+me.id).update({onDuty:!on}).catch(()=>toast('సేవ్ కాలేదు · Could not save')); };
+  $('#pos').onclick = ()=>{ unlockAudio(); setMapMode('driverpos'); };
+  $('#switch').onclick = ()=>{ if (d.busyRide) { toast('రైడ్ మధ్యలో మారలేరు · Finish the ride first'); return; } me.id=null; ls.set('fp-driver',null); renderDriver(); drawMap(); };
+  $('#done')?.addEventListener('click', async ()=>{ const id=d.busyRide;
+    await db.doc('rides/'+id).update({status:'COMPLETED',closedAt:now()}).catch(()=>{});
+    await db.doc('drivers/'+me.id).update({busyRide:null}).catch(()=>{}); toast('ట్రిప్ పూర్తయింది · Trip done'); });
+  presence();
+  watchMyCurrentRide(d.busyRide);
+}
+async function dSetPos(pt){ if (!me.id) return; await db.doc('drivers/'+me.id).update(pt).catch(()=>toast('సేవ్ కాలేదు · Could not save')); }
+let watchedRide = null;
+function watchMyCurrentRide(id){
+  if (id===watchedRide) return; watchedRide=id; myRideUnsub?.(); myRide=null;
+  if (!id) return;
+  myRideUnsub = db.doc('rides/'+id).onSnapshot((s)=>{
+    myRide = s.exists ? s.data() : null;
+    if (myRide && myRide.status==='CANCELLED') { toast('ప్రయాణికుడు రైడ్ రద్దు చేశారు · Passenger cancelled'); }
+    if (myRide && myRide.status!=='CONFIRMED' && drivers[me.id]?.busyRide===id) db.doc('drivers/'+me.id).update({busyRide:null}).catch(()=>{});
+    renderDriver();
+  }, ()=>{});
+}
+// Rides currently searching — show the alert if this driver was pinged
+const skipped = new Set();
+function watchSearching(){
+  unsubSearching?.();
+  unsubSearching = db.collection('rides').where('status','==','SEARCHING').onSnapshot((s)=>{
+    const d = me.id && drivers[me.id];
+    if (alertRide) { const still = s.docs.find(x=>x.id===alertRide.id && x.data().status==='SEARCHING'); if (!still) { closeAlert(); toast('ఈ రైడ్ వేరే డ్రైవర్ తీసుకున్నారు లేదా ముగిసింది · Ride taken or closed'); } }
+    if (!d || !d.onDuty || d.busyRide || alertRide) return;
+    const hit = s.docs.map(x=>({id:x.id,...x.data()})).find(r=>r.status==='SEARCHING' && r.expiresAt>now() && !skipped.has(r.id) && (r.pinged||[]).some(p=>p.id===me.id));
+    if (hit) openAlert(hit);
+  }, ()=>{});
+}
+function openAlert(r){
+  alertRide = r; const p = PLACES[r.dest]; const ping = r.pinged.find(x=>x.id===me.id);
+  $('#aKm').textContent = (ping?ping.km:'–') + ' కి.మీ.';
+  $('#aDest').textContent = p ? `➡️ ${p.te}\n${p.en}` : '➡️ —';
+  $('#alertov').classList.add('on'); beep(); clearInterval(beepTimer);
+  beepTimer = setInterval(()=>{
+    const left = Math.max(0, Math.ceil((r.expiresAt-now())/1000));
+    $('#aBar').style.width = (left/WINDOW_S*100)+'%'; $('#aSec').textContent = left+' సెకన్లు · seconds';
+    if (left<=0) { closeAlert(); toast('సమయం అయిపోయింది · Time is up'); return; }
+    beep();
+  }, 1000);
+}
+function closeAlert(){ alertRide=null; clearInterval(beepTimer); $('#alertov').classList.remove('on'); }
+$('#aSkip').onclick = async ()=>{ const r=alertRide; if(!r) return; skipped.add(r.id); closeAlert();
+  await db.doc('rides/'+r.id+'/declines/'+me.id).set({at:now()}).catch(()=>{}); };
+$('#aAcc').onclick = async ()=>{
+  const r = alertRide; if (!r) return; closeAlert();
+  const d = drivers[me.id]; if (!d || d.busyRide) { toast('మీరు ఇప్పటికే ఒక రైడ్‌లో ఉన్నారు · Already on a ride'); return; }
+  const c = db.doc('claims/'+r.id);
+  const l = await c.acquire({holder:me.id, ttlMs:5000}).catch(()=>({acquired:false}));
+  if (!l.acquired) { toast('ఈ రైడ్ వేరే డ్రైవర్ తీసుకున్నారు · Ride already taken'); return; }
+  const cs = await c.get();
+  if (cs.exists) { toast(cs.data().driverId?'ఈ రైడ్ వేరే డ్రైవర్ తీసుకున్నారు · Ride already taken':'సమయం అయిపోయింది · Ride closed'); return; }
+  const rs = await db.doc('rides/'+r.id).get();
+  if (!rs.exists || rs.data().status!=='SEARCHING' || rs.data().expiresAt<now()) { toast('సమయం అయిపోయింది · Ride closed'); return; }
+  await c.set({driverId:me.id, at:now()});
+  await db.doc('rides/'+r.id).update({status:'CONFIRMED', driverId:me.id, confirmedAt:now(),
+    driver:{name:d.name,name_te:d.name_te||'',auto_number:d.auto_number,phone:d.phone}});
+  await db.doc('drivers/'+me.id).update({busyRide:r.id});
+  toast('✅ రైడ్ మీది! ప్రయాణికుడి వద్దకు వెళ్ళండి · Ride is yours!');
+};
+
+/* presence: which drivers have the app open right now */
+let lastPresence = '';
+function presence(){
+  if (!room) return;
+  const d = me.id && drivers[me.id];
+  const v = JSON.stringify(d && d.onDuty ? {driverId:me.id} : {});
+  if (v===lastPresence) return; lastPresence=v;
+  try { room.presence(JSON.parse(v)); } catch {}
+}
+
+/* ---------- roles / tabs ---------- */
+function setRole(r){
+  if (!['passenger','driver','both'].includes(r)) r='both';
+  $('#main').dataset.role = r;
+  document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.role===r));
+  requestAnimationFrame(drawMap);
+}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ location.hash=b.dataset.role; });
+addEventListener('hashchange',()=>setRole(location.hash.slice(1)));
+setRole(location.hash.slice(1));
+
+/* ---------- start ---------- */
+$('#mode').textContent = 'ఈ ఫోన్‌లో డెమో · This device only';
+watchDrivers(); watchSearching(); renderDriver(); pStart();
+setInterval(()=>{ pTick().catch(()=>{}); }, 1000);
+
+(async ()=>{
+  if (!window.claude?.use) return;
+  const [dbx, rm, dc] = await Promise.all([claude.use('db'), claude.use('room'), claude.use('dictation')].map(p=>p.catch(()=>null)));
+  if (dc) {
+    dict = dc; $('#mic').hidden = false;
+    dc.onPartial(({text})=>{ $('#say').value = (micText+' '+text).trim(); });
+    dc.onFinal(({text})=>{ micText = (micText+' '+text).trim(); $('#say').value = micText; });
+    dc.onState(({state})=>{ const liveNow = state==='listening'; $('#mic').classList.toggle('live', liveNow);
+      if (!liveNow && micText) { const t=micText; micText=''; $('#say').value=''; pHeard(t,true); } });
+  }
+  if (rm) {
+    room = rm;
+    // Presence is a soft signal: only trusted while the room is connected
+    let settled = false; setTimeout(()=>{ settled = true; }, 2500);
+    const apply = () => { present = (settled && rm.connected()) ? new Set(rm.peers().map(p=>p.presence?.driverId).filter(x=>typeof x==='string')) : null; renderDrvList(); };
+    rm.onPeers(apply, ()=>{ present = null; renderDrvList(); });
+    rm.onConnection(apply, ()=>{ present = null; });
+    setTimeout(apply, 2600);
+    presence();
+  }
+  if (dbx) {
+    db = dbx; live = true;
+    $('#mode').textContent = 'లైవ్ కనెక్ట్ అవుతోంది… · Connecting';
+    liveTimer = setTimeout(()=>{ $('#mode').textContent='⚠️ లైవ్ డేటా అందడం లేదు · Live data not reachable yet'; }, 10000);
+    drivers = {}; watchDrivers(); watchSearching();
+    if (pRideId) watchMyRide(pRideId);
+  }
+})();
+}
+</script>
+</body>
+</html>

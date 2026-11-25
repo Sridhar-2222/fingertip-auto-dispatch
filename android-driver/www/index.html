@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="te">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<title>Fingertip Driver</title>
+<style>
+:root{--bg:#eef8f6;--panel:#fff;--ink:#0f2e2b;--muted:#4f6f6b;--teal:#0f766e;--soft:#d5efeb;--line:#b9e0da;--go:#16a34a;--off:#6b7280;--warn:#fef3c7}
+@media (prefers-color-scheme:dark){:root{--bg:#0c1a19;--panel:#132827;--ink:#e4f4f1;--muted:#9fbcb7;--teal:#3cc3b4;--soft:#1b3a37;--line:#2a4a47;--warn:#3d3415}}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:17px/1.5 "Noto Sans Telugu",system-ui,sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+button,input,a.btn{font:inherit}
+header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--teal);color:#fff}
+header .av{width:44px;height:44px;border-radius:50%;background:#fff;display:grid;place-items:center;font-size:24px;flex:none}
+header b{display:block;font-size:18px;line-height:1.2}header span{font-size:14px;opacity:.9}
+main{padding:16px;display:flex;flex-direction:column;gap:14px;max-width:560px;margin:0 auto}
+.screen{display:none}.screen.on{display:flex;flex-direction:column;gap:14px}
+.card{background:var(--soft);border-radius:16px;padding:14px 16px}
+.card h2{margin:0 0 4px;font-size:19px}
+.muted{color:var(--muted);font-size:15px}
+.duty{min-height:140px;border:0;border-radius:22px;color:#fff;font-size:27px;font-weight:800;line-height:1.3;width:100%}
+.duty small{display:block;font-size:16px;font-weight:600;opacity:.95}
+.duty.on{background:var(--go)}.duty.off{background:var(--off)}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:60px;border-radius:16px;border:2px solid var(--teal);background:transparent;color:var(--teal);font-weight:700;font-size:18px;text-decoration:none;padding:8px 14px;width:100%}
+.btn.solid{background:var(--teal);color:#fff}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ride{background:var(--warn);border-radius:16px;padding:14px 16px}
+.ride h2{margin:0 0 6px;font-size:20px}
+.big{font-size:22px;font-weight:800}
+label{display:grid;gap:6px;font-weight:600}
+input{min-height:58px;border-radius:14px;border:1px solid var(--line);padding:0 14px;font-size:22px;background:var(--panel);color:var(--ink);letter-spacing:.04em}
+.err{color:#b91c1c;font-weight:700;min-height:1.5em}
+.alert{position:fixed;inset:0;background:#15803d;color:#fff;display:none;flex-direction:column;gap:14px;padding:calc(24px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));z-index:10}
+.alert.on{display:flex;animation:flash 1s infinite alternate}
+@keyframes flash{to{background:#16a34a}}
+.alert .km{font-size:64px;font-weight:800;line-height:1}
+.alert .dest{font-size:30px;font-weight:800;line-height:1.3;white-space:pre-line}
+.bar{height:12px;border-radius:6px;background:rgb(255 255 255/.3);overflow:hidden}.bar i{display:block;height:100%;background:#fff;transition:width 1s linear}
+.alert .btns{margin-top:auto;display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.alert .btns button{min-height:110px;border-radius:20px;border:0;font-size:28px;font-weight:800;line-height:1.2}
+.acc{background:#fff;color:#15803d}.skip{background:rgb(0 0 0/.25);color:#fff}
+.toast{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));background:#111827;color:#fff;padding:14px 16px;border-radius:14px;font-weight:600;display:none;z-index:20}
+.toast.on{display:block}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header><div class="av">🛺</div><div><b id="hName">Fingertip డ్రైవర్</b><span id="hSub">Fingertip Driver</span></div></header>
+<main>
+  <section class="screen" id="s-loading"><div class="card"><h2>లోడ్ అవుతోంది…</h2><div class="muted">Loading…</div></div></section>
+
+  <section class="screen" id="s-setup"><div class="card"><h2>⚙️ సెటప్ పూర్తి కాలేదు</h2>
+    <div class="muted">This app build has no Supabase address yet. Put your project URL and publishable key in <b>www/config.js</b> and rebuild.</div></div></section>
+
+  <section class="screen" id="s-error"><div class="card"><h2>⚠️ కనెక్ట్ కాలేదు</h2><div class="muted" id="errText">Could not connect.</div></div>
+    <button class="btn solid" id="retry">🔄 మళ్ళీ ప్రయత్నించండి · Try again</button></section>
+
+  <section class="screen" id="s-pair">
+    <div class="card"><h2>👋 స్వాగతం! · Welcome</h2>
+      <div class="muted">మీ ఫోన్ నంబర్ మరియు Fingertip ఇచ్చిన 6 అంకెల కోడ్ ఎంటర్ చేయండి. Enter your phone number and the 6-digit code Fingertip gave you.</div></div>
+    <form id="pairForm" style="display:grid;gap:14px">
+      <label>📱 ఫోన్ నంబర్ · Phone<input id="pPhone" inputmode="numeric" autocomplete="tel" maxlength="10" placeholder="98XXXXXXXX" required></label>
+      <label>🔑 కోడ్ · Code<input id="pCode" inputmode="numeric" maxlength="6" placeholder="••••••" required></label>
+      <div class="err" id="pErr" role="alert"></div>
+      <button class="btn solid" id="pBtn">✅ చేరండి · Join</button>
+    </form>
+  </section>
+
+  <section class="screen" id="s-main">
+    <button class="duty off" id="duty" aria-pressed="false"></button>
+    <div id="rideBox"></div>
+    <div class="card" id="statusCard"><h2 id="stTitle"></h2><div class="muted" id="stText"></div></div>
+    <div class="card"><h2>📍 GPS</h2><div class="muted" id="gpsText">—</div></div>
+  </section>
+</main>
+
+<div class="alert" id="alert" role="alertdialog" aria-label="New ride">
+  <div style="font-size:22px;font-weight:800">🔔 కొత్త రైడ్! · New ride</div>
+  <div><div class="km" id="aKm">–</div><div>దూరం · pickup distance</div></div>
+  <div class="dest" id="aDest">–</div>
+  <div class="bar"><i id="aBar" style="width:100%"></i></div>
+  <div id="aSec" style="font-weight:700;font-size:19px"></div>
+  <div class="btns"><button class="acc" id="aAcc">అంగీకరించు<br><small>ACCEPT</small></button><button class="skip" id="aSkip">వద్దు<br><small>SKIP</small></button></div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="lib/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

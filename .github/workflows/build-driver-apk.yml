@@ -1,0 +1,68 @@
+# Builds the Fingertip Driver Android app (APK) on GitHub's free servers.
+# Runs on every push to android-driver/, or by hand: Actions → "Build driver APK" → Run workflow.
+# Download: open the finished run → Artifacts → fingertip-driver-apk.
+#
+# Optional repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL       e.g. https://abcd1234.supabase.co
+#   SUPABASE_ANON_KEY  the publishable / anon key (NOT the service_role key)
+# If set, they are written into the app at build time, so www/config.js
+# doesn't need editing.
+name: Build driver APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['android-driver/**', '.github/workflows/build-driver-apk.yml']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-driver
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: android-driver/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install
+        run: npm ci
+
+      - name: Write Supabase settings from secrets (if provided)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_ANON_KEY" ]; then
+            node -e 'require("fs").writeFileSync("www/config.js", "window.FINGERTIP_CONFIG = " + JSON.stringify({SUPABASE_URL: process.env.SUPABASE_URL, SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY}) + ";\n")'
+            echo "Supabase settings written."
+          else
+            echo "No secrets set — using www/config.js as committed."
+          fi
+
+      - name: Copy web files into the Android project
+        run: npm run sync
+
+      - name: Build APK
+        working-directory: android-driver/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk fingertip-driver.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fingertip-driver-apk
+          path: android-driver/fingertip-driver.apk
+          retention-days: 30

@@ -1,0 +1,10 @@
+{
+  "appId": "in.fingertip.driver",
+  "appName": "Fingertip Driver",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "LocalNotifications": { "iconColor": "#0f766e" }
+  }
+}
