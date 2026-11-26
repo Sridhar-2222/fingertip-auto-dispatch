@@ -1,159 +1,217 @@
-// LOCAL TESTING ONLY. Drives the real driver app (www/) in headless Chrome
-// against test/server.ts. Phone plugins (GPS service, notifications,
-// keep-awake) are fakes that record calls; Supabase auth/realtime are faked
-// in the page, database calls and the Edge Function are real.
-// Usage: start test/server.ts, then  node test/app.test.mjs
-import puppeteer from 'puppeteer-core';
-import fs from 'node:fs';
+// LOCAL TESTING ONLY. Drives the real app (www/) as TWO phones in headless Chromium:
+// a passenger at Karimnagar bus stand and an auto driver 1 km north.
+// The database functions are replaced by a small in-memory stand-in (same names and
+// answers as supabase/migrations/20261125180000_app_device_keys.sql + 20261126044419_ride_start_code.sql). Voice and phone
+// plugins are fakes that record what was spoken and return scripted speech.
+// Usage: node test/app.test.mjs   (needs the playwright package; Chromium is pre-installed)
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const API = 'http://localhost:8787';
-const WWW = new URL('../www/', import.meta.url);
+const { chromium } = createRequire(import.meta.url)('playwright');
+const WWW = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'www');
+const URL_BASE = 'https://test.supabase.local';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const api = async (p, body) => (await fetch(API + p, body ? { method: 'POST', body: JSON.stringify(body) } : {})).json();
 let failed = 0;
 const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) failed++; };
 
-// Fake Supabase client: real RPCs through the test server, fake auth, no realtime (tests the polling backup)
-const FAKE_SUPABASE = `window.supabase = { createClient(url) {
-  let uid = localStorage.getItem('uid');
-  return {
-    auth: {
-      async getSession() { return { data: { session: uid ? { access_token: uid } : null } }; },
-      async signInAnonymously() { uid = '40000000-0000-0000-0000-0000000000a1'; localStorage.setItem('uid', uid); return { data: {}, error: null }; },
-    },
-    async rpc(fn, args) {
-      const r = await fetch(url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(uid ? { Authorization: 'Bearer ' + uid } : {}) }, body: JSON.stringify(args || {}) });
-      const j = await r.json(); return j.error ? { data: null, error: j.error } : { data: j.data, error: null };
-    },
-    channel() { const c = { on() { return c; }, subscribe() { return c; } }; return c; },
-  };
-} };`;
-const FAKE_PLUGINS = `window.__calls = []; window.Capacitor = { Plugins: {
-  BackgroundGeolocation: {
-    async addWatcher(opts, cb) { __calls.push(['addWatcher', opts.backgroundTitle]); window.__gps = cb; setTimeout(() => cb({ latitude: 18.4400, longitude: 79.1290 }), 50); return 'w1'; },
-    async removeWatcher() { __calls.push(['removeWatcher']); }, async openSettings() {} },
-  LocalNotifications: { async createChannel(c) { __calls.push(['channel', c.id, c.importance]); }, async requestPermissions() { __calls.push(['notifPerm']); return { display: 'granted' }; },
-    async schedule(n) { __calls.push(['notify', n.notifications[0].title]); }, addListener() {} },
-  KeepAwake: { async keepAwake() { __calls.push(['keepAwake']); }, async allowSleep() { __calls.push(['allowSleep']); } } } };`;
+// ---------------- in-memory stand-in for the auto_* database functions ----------------
+const db = {
+  drivers: [{ id: 'd1', name: 'Ramesh', name_te: 'రమేష్', phone: '919000000011', auto_number: 'TS02T0011', status: 'OFFLINE', lat: null, lng: null, pair_code: '111111', pair_fails: 0 }],
+  passengers: [{ id: 'p1', name: 'Lakshmi', phone: '919000000022', pair_code: '222222', pair_fails: 0 }],
+  devices: {}, rides: [], pings: [],
+};
+const dist = (a, b) => { const R = 6371, r = Math.PI / 180, x = (b.lng - a.lng) * r * Math.cos((a.lat + b.lat) * r / 2), y = (b.lat - a.lat) * r; return Math.hypot(x, y) * R; };
+const dev = (k) => db.devices[k];
+const fns = {
+  auto_pair({ p_role, p_phone, p_code }) {
+    const ph = '91' + p_phone.replace(/\D/g, '').slice(-10);
+    const list = p_role === 'driver' ? db.drivers : db.passengers;
+    const x = list.find((r) => r.phone === ph);
+    if (!x) return { ok: false, reason: 'unknown_phone' };
+    if (x.pair_fails >= 5) return { ok: false, reason: 'locked' };
+    if (x.pair_code !== p_code) { x.pair_fails++; return { ok: false, reason: 'wrong_code' }; }
+    const key = 'k'.repeat(20) + Math.random().toString(16).slice(2).padEnd(44, '0');
+    db.devices[key] = { role: p_role, id: x.id }; x.pair_code = null;
+    return { ok: true, key, role: p_role, name: x.name };
+  },
+  auto_driver_me({ p_key }) { const d = dev(p_key); if (d?.role !== 'driver') return { ok: false, reason: 'not_paired' }; const x = db.drivers.find((r) => r.id === d.id); return { ok: true, ...x }; },
+  auto_driver_duty({ p_key, p_on }) { const x = db.drivers.find((r) => r.id === dev(p_key).id); if (x.status !== 'BUSY') x.status = p_on ? 'AVAILABLE' : 'OFFLINE'; return { ok: true, status: x.status }; },
+  auto_driver_beat({ p_key, p_lat, p_lng }) { const x = db.drivers.find((r) => r.id === dev(p_key).id); x.lat = p_lat; x.lng = p_lng; return { ok: true }; },
+  auto_driver_poll({ p_key }) {
+    const d = dev(p_key); if (d?.role !== 'driver') return { ok: false, reason: 'not_paired' };
+    const x = db.drivers.find((r) => r.id === d.id);
+    const p = db.pings.find((q) => q.driver_id === x.id && q.status === 'SENT' && q.expires > Date.now());
+    const r = db.rides.find((q) => q.driver_id === x.id && q.status === 'CONFIRMED');
+    return { ok: true, status: x.status,
+      alert: p ? { ride_id: p.ride_id, distance_km: p.km, destination_name: db.rides.find((q) => q.id === p.ride_id).dest, expires_at: new Date(p.expires).toISOString() } : null,
+      ride: r ? { ride_id: r.id, started: !!r.started, passenger_phone: r.phone, destination_name: r.dest, pickup_lat: r.lat, pickup_lng: r.lng } : null };
+  },
+  auto_driver_accept({ p_key, p_ride_id }) {
+    const x = db.drivers.find((r) => r.id === dev(p_key).id); const r = db.rides.find((q) => q.id === p_ride_id);
+    if (r.status !== 'SEARCHING') return { ok: false, reason: 'taken' };
+    r.status = 'CONFIRMED'; r.driver_id = x.id; x.status = 'BUSY';
+    db.pings.forEach((p) => { if (p.ride_id === r.id) p.status = p.driver_id === x.id ? 'ACCEPTED' : 'TAKEN'; });
+    return { ok: true, ride_id: r.id, passenger_phone: r.phone, destination_name: r.dest, pickup_lat: r.lat, pickup_lng: r.lng };
+  },
+  auto_driver_skip({ p_key, p_ride_id }) { db.pings.forEach((p) => { if (p.ride_id === p_ride_id && p.driver_id === dev(p_key).id) p.status = 'DECLINED'; }); return { ok: true }; },
+  auto_driver_start({ p_key, p_ride_id, p_code }) {
+    const r = db.rides.find((q) => q.id === p_ride_id && q.driver_id === dev(p_key)?.id && q.status === 'CONFIRMED');
+    if (!r) return { ok: false, reason: 'not_your_ride' };
+    if (r.code !== p_code) { r.fails = (r.fails || 0) + 1; return r.fails >= 5 ? { ok: false, reason: 'locked' } : { ok: false, reason: 'wrong', left: 5 - r.fails }; }
+    r.started = true; return { ok: true };
+  },
+  auto_driver_done({ p_key, p_ride_id }) { const r = db.rides.find((q) => q.id === p_ride_id); if (!r.started) return { ok: false, reason: 'not_started' }; r.status = 'COMPLETED'; r.closed = Date.now(); db.drivers.find((x) => x.id === dev(p_key).id).status = 'AVAILABLE'; return { ok: true }; },
+  auto_passenger_me({ p_key }) { const d = dev(p_key); if (d?.role !== 'passenger') return { ok: false, reason: 'not_paired' }; return { ok: true, ...db.passengers.find((r) => r.id === d.id) }; },
+  auto_book({ p_key, p_lat, p_lng, p_said, p_place }) {
+    const pa = db.passengers.find((r) => r.id === dev(p_key).id);
+    if (db.rides.some((r) => r.pid === pa.id && ['SEARCHING', 'CONFIRMED'].includes(r.status))) return { ok: false, reason: 'already_booked' };
+    const r = { id: 'r' + (db.rides.length + 1), code: '4821', pid: pa.id, phone: pa.phone, dest: p_place || p_said, lat: p_lat, lng: p_lng, status: 'SEARCHING', expires: Date.now() + 30000, said: p_said };
+    db.rides.push(r);
+    for (const x of db.drivers) {
+      if (x.status !== 'AVAILABLE' || x.lat == null) continue;
+      const km = dist({ lat: p_lat, lng: p_lng }, x);
+      if (km <= 3) db.pings.push({ ride_id: r.id, driver_id: x.id, km: Math.round(km * 100) / 100, status: 'SENT', expires: r.expires });
+    }
+    const n = db.pings.filter((p) => p.ride_id === r.id).length;
+    if (!n) { r.status = 'NO_AUTO'; r.closed = Date.now(); }
+    return { ok: true, ride_id: r.id, drivers_alerted: n };
+  },
+  auto_passenger_poll({ p_key }) {
+    const d = dev(p_key); const r = [...db.rides].reverse().find((q) => q.pid === d.id);
+    if (!r) return { ok: true, ride: null };
+    const x = db.drivers.find((y) => y.id === r.driver_id);
+    return { ok: true, ride: { ride_id: r.id, ride_code: r.code, started: !!r.started, status: r.status, destination_name: r.dest, expires_at: new Date(r.expires).toISOString(),
+      closed_at: r.closed ? new Date(r.closed).toISOString() : null, drivers_alerted: db.pings.filter((p) => p.ride_id === r.id).length,
+      driver: r.status === 'CONFIRMED' ? { name: x.name, name_te: x.name_te, auto_number: x.auto_number, phone: x.phone, lat: x.lat, lng: x.lng, distance_km: Math.round(dist(r, x) * 100) / 100 } : null } };
+  },
+  auto_passenger_cancel({ p_key }) { const r = db.rides.find((q) => q.pid === dev(p_key).id && ['SEARCHING', 'CONFIRMED'].includes(q.status)); if (!r) return { ok: false }; r.status = 'CANCELLED'; r.closed = Date.now(); const x = db.drivers.find((y) => y.id === r.driver_id); if (x) x.status = 'AVAILABLE'; return { ok: true }; },
+};
 
-const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: 'new', args: ['--no-sandbox', '--allow-file-access-from-files', '--autoplay-policy=no-user-gesture-required'] });
-const errors = [];
-async function openApp(config) {
-  const page = await browser.newPage();
-  await page.setViewport({ width: 400, height: 860, isMobile: true });
+// ---------------- fake phone plugins (voice is scripted per phone) ----------------
+const plugins = (hear) => `
+window.__said = []; window.__heard = ${JSON.stringify(hear)}; window.__opened = [];
+window.Capacitor = { Plugins: {
+  TextToSpeech: { async isLanguageSupported() { return { supported: true }; }, async speak(o) { __said.push(o.text); await new Promise(r => setTimeout(r, 30)); }, async stop() {} },
+  SpeechRecognition: { async available() { return { available: true }; }, async checkPermissions() { return { speechRecognition: 'granted' }; },
+    async requestPermissions() { return { speechRecognition: 'granted' }; },
+    async start() { await new Promise(r => setTimeout(r, 1500)); return { matches: [__heard.shift() || ''] }; }, async stop() {} },
+  BackgroundGeolocation: { async addWatcher(o, cb) { setTimeout(() => cb({ latitude: 18.4438, longitude: 79.1325 }), 50); return 'w1'; }, async removeWatcher() {}, async openSettings() {} },
+  LocalNotifications: { async createChannel() {}, async requestPermissions() { return {}; }, async schedule() {}, addListener() {} },
+  KeepAwake: { async keepAwake() {}, async allowSleep() {} } } };
+HTMLAnchorElement.prototype.click = function () { __opened.push(this.href); };
+window.confirm = () => true;`;
+
+const browser = await chromium.launch();
+async function phone(name, hear, geo) {
+  const ctx = await browser.newContext({ geolocation: geo, permissions: ['geolocation'], viewport: { width: 390, height: 800 } });
+  const page = await ctx.newPage();
+  const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.setRequestInterception(true);
-  page.on('request', (r) => {
-    const u = r.url();
-    if (u.endsWith('/lib/supabase.js')) return r.respond({ contentType: 'application/javascript', body: FAKE_SUPABASE });
-    if (u.endsWith('/config.js')) return r.respond({ contentType: 'application/javascript', body: `window.FINGERTIP_CONFIG = ${JSON.stringify(config)};` });
-    r.continue();
+  await page.route(URL_BASE + '/rest/v1/rpc/*', async (route) => {
+    const fn = route.request().url().split('/').pop();
+    const body = JSON.parse(route.request().postData() || '{}');
+    const out = fns[fn] ? fns[fn](body) : { ok: false, reason: 'no_fn' };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(out) });
   });
-  await page.evaluateOnNewDocument(FAKE_PLUGINS);
-  await page.goto(new URL('index.html', WWW).href);
+  await page.route('**/config.js', (route) => route.fulfill({ contentType: 'text/javascript',
+    body: `window.FINGERTIP_CONFIG = { SUPABASE_URL: '${URL_BASE}', SUPABASE_ANON_KEY: 'sb_publishable_test' };` }));
+  await page.addInitScript(plugins(hear));
+  await page.goto('file://' + WWW + '/index.html');
+  page.errors = errors; page.who = name;
   return page;
 }
-const visible = (page, id) => page.$eval('#' + id, (e) => e.classList.contains('on'));
-const text = (page, sel) => page.$eval(sel, (e) => e.innerText);
-async function waitFor(fn, ms = 9000) { const t = Date.now(); while (Date.now() - t < ms) { if (await fn()) return true; await sleep(250); } return false; }
+const said = (p) => p.evaluate(() => window.__said.join(' || '));
 
-// 0. Not configured
-let page = await openApp({ SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co', SUPABASE_ANON_KEY: 'YOUR-KEY' });
-await sleep(300);
-ok(await visible(page, 's-setup'), 'unconfigured build shows setup message');
-await page.close();
+// Passenger at Karimnagar bus stand; driver 1 km north (driver GPS comes from the fake plugin)
+const pas = await phone('passenger', ['కమాన్ కి వెళ్ళాలి'], { latitude: 18.4348, longitude: 79.1325 });
+const drv = await phone('driver', ['సరే'], { latitude: 18.4438, longitude: 79.1325 });
 
-page = await openApp({ SUPABASE_URL: API, SUPABASE_ANON_KEY: 'test-anon' });
-ok(await waitFor(() => visible(page, 's-pair')), 'first start: pairing screen');
-const calls = () => page.evaluate(() => window.__calls);
-ok((await calls()).some((c) => c[0] === 'channel' && c[1] === 'rides' && c[2] === 5), 'high-importance "rides" notification channel created');
+// --- pairing ---
+ok(await pas.locator('#s-role.on').isVisible(), 'first open shows Passenger / Driver choice');
+await drv.click('[data-role=driver]');
+await drv.fill('#pPhone', '9000000011'); await drv.fill('#pCode', '000000'); await drv.click('#pBtn');
+await drv.waitForTimeout(200);
+ok((await drv.textContent('#pErr')).includes('Wrong code'), 'wrong code is refused');
+await drv.fill('#pCode', '111111'); await drv.click('#pBtn');
+await drv.waitForSelector('#s-main.on');
+ok((await drv.textContent('#hName')).includes('రమేష్'), 'driver paired, name shown');
 
-// 1. Pairing
-await page.type('#pPhone', '9800000001'); await page.type('#pCode', '000000'); await page.click('#pBtn');
-ok(await waitFor(async () => (await text(page, '#pErr')).includes('కోడ్ తప్పు')), 'wrong code → Telugu error');
-await page.$eval('#pCode', (e) => (e.value = '')); await page.type('#pCode', '123456'); await page.click('#pBtn');
-ok(await waitFor(() => visible(page, 's-main')), 'right code → main screen');
-ok((await text(page, '#hName')).includes('రవి') && (await text(page, '#hSub')).includes('TS 02 UB 4512'), 'header shows driver + auto number');
-ok((await api('/test/driver?name=Ravi')).paired, 'driver row linked to this phone');
+await pas.click('[data-role=passenger]');
+await pas.fill('#pPhone', '9000000022'); await pas.fill('#pCode', '222222'); await pas.click('#pBtn');
+await pas.waitForSelector('#s-pass.on');
+ok((await pas.textContent('#hName')).includes('Lakshmi'), 'passenger paired, name shown');
+ok(await pas.evaluate(() => !!localStorage.getItem('rxf-auto-device')), 'device key kept on the phone');
 
-// 2. Duty on → GPS service + heartbeat
-await page.click('#duty');
-ok(await waitFor(async () => (await text(page, '#duty')).includes('డ్యూటీలో')), 'ON DUTY');
-ok(await waitFor(async () => (await api('/test/driver?name=Ravi')).has_gps), 'GPS heartbeat saved');
-const d = await api('/test/driver?name=Ravi');
-ok(d.status === 'AVAILABLE' && Number(d.lat) === 18.44, 'database: AVAILABLE at the GPS position');
-ok((await calls()).some((c) => c[0] === 'addWatcher') && (await calls()).some((c) => c[0] === 'notifPerm'), 'background GPS service started, notification permission asked');
+// --- driver goes on duty ---
+await drv.click('#duty');
+await drv.waitForTimeout(400);
+ok((await drv.textContent('#duty')).includes('ON DUTY'), 'driver on duty');
+ok(db.drivers[0].lat === 18.4438, 'driver GPS sent (1 km north of passenger)');
+ok((await said(drv)).includes('డ్యూటీ ప్రారంభమైంది'), 'driver hears "on duty" in Telugu');
 
-// 3. Ride from WhatsApp → alert within one poll
-await api('/test/srinu-free');
-await page.evaluate(() => { window.__calls.length = 0; });
-let r = await api('/test/ride', { phone: '919811111111', dest: 'KOTHIRAMPUR' });
-ok(r.pinged.includes('Ravi'), 'Ravi alerted by the database');
-ok(await waitFor(() => visible(page, 'alert'), 7000), 'alert appears (polling backup, no realtime)');
-ok((await text(page, '#aDest')).includes('కోతిరాంపూర్'), 'alert shows destination in Telugu');
-ok((await calls()).some((c) => c[0] === 'keepAwake'), 'screen kept awake during alert');
-fs.mkdirSync('/home/claude/scratch', { recursive: true });
-await page.screenshot({ path: '/home/claude/scratch/apk-alert.png' });
+// --- passenger speaks the destination ---
+await pas.click('#pMic');
+await pas.waitForSelector('#pSaidBox:not([hidden])');
+ok((await pas.textContent('#pSaid')).includes('Kaman'), 'spoken "కమాన్ కి వెళ్ళాలి" matched to Kaman');
+ok((await said(pas)).includes('ఎక్కడికి వెళ్ళాలి'), 'passenger asked "where to" aloud');
+await pas.click('#pGo');
+await pas.waitForSelector('text=Finding an auto');
+ok(db.pings.length === 1 && db.pings[0].km > 0.9 && db.pings[0].km < 1.1, 'booking alerted the driver 1 km away');
 
-// 4. Accept (Srinu also alerted but Ravi is first)
-await page.click('#aAcc');
-ok(await waitFor(async () => (await text(page, '#rideBox')).includes('+919811111111')), 'accepted: passenger phone shown');
-ok(await page.$eval('#rCall', (a) => a.href === 'tel:+919811111111'), 'Call button dials passenger');
-ok(await page.$eval('#rRoute', (a) => a.href.startsWith('https://www.google.com/maps/dir/?api=1&destination=18.4386,79.1288')), 'Route opens Google Maps to pickup');
-let sent = await api('/test/sent');
-ok(sent.some((m) => m.to === '919811111111' && m.text?.startsWith('✅') && m.text.includes('Ravi')), 'passenger got WhatsApp confirmation');
-await page.screenshot({ path: '/home/claude/scratch/apk-ride.png' });
+// --- driver gets the alert, hears it, says "సరే" ---
+await drv.waitForSelector('#alert.on', { timeout: 6000 });
+ok((await drv.textContent('#aKm')).includes('1.0'), 'driver alert shows 1.0 km');
+ok((await drv.textContent('#aDest')).includes('కమాన్'), 'driver alert shows destination in Telugu');
+await drv.waitForFunction(() => !document.getElementById('alert').classList.contains('on'), null, { timeout: 8000 });
+const dSaid = await said(drv);
+ok(dSaid.includes('కొత్త రైడ్') && dSaid.includes('సరే అనండి'), 'driver heard the ride read aloud');
+ok(db.rides[0].status === 'CONFIRMED', 'voice "సరే" accepted the ride');
+await drv.waitForTimeout(300);
+ok((await drv.evaluate(() => __opened.join())).includes('google.com/maps/dir'), 'map route opened after accepting');
+ok((await said(drv)).includes('రైడ్ మీది'), 'driver heard "ride is yours" + destination');
+ok((await drv.textContent('#rPhone')).includes('919000000022'), 'driver sees passenger phone');
 
-// 5. Duty off blocked during ride; trip done
-await page.click('#duty'); await sleep(200);
-ok((await text(page, '#toast')).includes('ముందు రైడ్ పూర్తి'), 'cannot go off duty mid-ride');
-await page.click('#rDone');
-ok(await waitFor(async () => !(await text(page, '#rideBox')).trim()), 'trip done → ride card gone');
-ok((await api('/test/driver?name=Ravi')).status === 'AVAILABLE', 'database: Ravi AVAILABLE again');
+// --- passenger sees and hears the driver ---
+await pas.waitForSelector('text=Auto is coming', { timeout: 6000 });
+ok((await pas.textContent('#pRide')).includes('TS02T0011'), 'passenger sees auto number');
+ok((await said(pas)).includes('ఆటో దొరికింది'), 'passenger hears "auto found"');
 
-// 6. Skip → only driver skipped → passenger told "no autos"
-await api('/test/srinu-accept', { ride_id: '00000000-0000-0000-0000-000000000000' }); // no-op
-await page.evaluate(() => fetch('http://localhost:8787/test/srinu-free'));
-r = await api('/test/ride', { phone: '919822222222', dest: 'KAMAN' });
-ok(await waitFor(() => visible(page, 'alert'), 7000), 'second alert');
-await page.click('#aSkip');
-await sleep(600);
-// Srinu was also pinged; make Srinu skip too via the function
-await fetch(API + '/functions/v1/dispatch/driver/decline', { method: 'POST', headers: { authorization: 'Bearer 40000000-0000-0000-0000-0000000000a2' }, body: JSON.stringify({ ride_id: r.ride_id }) });
-await sleep(300);
-sent = await api('/test/sent');
-ok(sent.some((m) => m.to === '919822222222' && m.text?.includes('అందుబాటులో లేవు')), 'all skipped → passenger told no autos');
+// --- Rapido-style code: on the passenger's screen only; driver types / says it to start ---
+ok((await pas.textContent('#pCode4')).trim() === '4821', 'passenger sees ride code 4821 big');
+ok((await said(pas)).includes('4 8 2 1'), 'passenger hears the ride code');
+ok(!(await drv.textContent('#rideBox')).includes('4821'), 'driver screen does NOT show the code');
+ok(!(await drv.$('#rDone')), 'no "Trip done" before the trip is started');
+await drv.fill('#rCodeIn', '1111'); await drv.click('#rStart'); await drv.waitForTimeout(300);
+ok(!db.rides[0].started && (await drv.textContent('#toast')).includes('4'), 'wrong code refused, tries left shown');
+await drv.evaluate(() => { __heard.push('నాలుగు ఎనిమిది రెండు ఒకటి'); });
+await drv.click('#rCodeMic');
+await drv.waitForSelector('#rDone', { timeout: 6000 });
+ok(db.rides[0].started === true, 'spoken Telugu code "నాలుగు ఎనిమిది రెండు ఒకటి" started the trip');
+await pas.waitForSelector('text=Trip started', { timeout: 6000 });
+ok(!(await pas.$('#pCode4')), 'passenger code hidden once the trip started');
 
-// 7. Other driver takes it first → Ravi's alert closes
-r = await api('/test/ride', { phone: '919833333333', dest: 'BUS_STAND' });
-ok(await waitFor(() => visible(page, 'alert'), 7000), 'third alert');
-const j = await api('/test/srinu-accept', { ride_id: r.ride_id });
-ok(j.ok, 'Srinu accepted first');
-ok(await waitFor(async () => !(await visible(page, 'alert')), 7000), 'Ravi alert closes by itself');
-await page.click('#aAcc').catch(() => {});
+// --- trip done ---
+await drv.click('#rDone');
+await pas.waitForSelector('text=Trip done', { timeout: 6000 });
+ok(db.drivers[0].status === 'AVAILABLE', 'driver free again after trip');
 
-// 8. Passenger cancels on WhatsApp → driver app notices
-await api('/test/srinu-free');
-r = await api('/test/ride', { phone: '919844444444', dest: 'KAMAN' });
-ok(await waitFor(() => visible(page, 'alert'), 7000), 'fourth alert');
-await page.click('#aAcc');
-ok(await waitFor(async () => (await text(page, '#rideBox')).includes('+919844444444')), 'accepted fourth');
-await api('/test/cancel', { phone: '919844444444' });
-ok(await waitFor(async () => !(await text(page, '#rideBox')).trim(), 17000), 'passenger cancelled → ride card removed');
-ok((await text(page, '#toast')).includes('రద్దు'), 'driver told passenger cancelled');
+// --- second ride: driver says "వద్దు" → skipped, passenger told no auto after the window ---
+await pas.click('#pOk');
+await drv.evaluate(() => { __heard.push('వద్దు'); });
+await pas.evaluate(() => { __heard.push('బస్ స్టాండ్'); });
+await pas.click('#pMic'); await pas.waitForSelector('#pSaidBox:not([hidden])');
+ok((await pas.textContent('#pSaid')).includes('Bus Stand'), 'second destination matched (Bus Stand)');
+await pas.click('#pGo');
+await drv.waitForSelector('#alert.on', { timeout: 6000 });
+await drv.waitForFunction(() => !document.getElementById('alert').classList.contains('on'), null, { timeout: 8000 });
+ok(db.pings.find((p) => p.ride_id === 'r2').status === 'DECLINED', 'voice "వద్దు" skipped the ride');
+db.rides[1].status = 'NO_AUTO'; db.rides[1].closed = Date.now();   // the 5-second timer's job in the real database
+await pas.waitForSelector('text=No auto found', { timeout: 6000 });
+ok((await said(pas)).includes('ఆటో దొరకలేదు'), 'passenger hears "no auto"');
 
-// 9. Off duty → GPS service stopped
-await page.click('#duty');
-ok(await waitFor(async () => (await text(page, '#duty')).includes('ఆఫ్ డ్యూటీ')), 'OFF DUTY');
-ok((await calls()).some((c) => c[0] === 'removeWatcher'), 'background GPS stopped');
-ok((await api('/test/driver?name=Ravi')).status === 'OFFLINE', 'database: OFFLINE');
-await page.screenshot({ path: '/home/claude/scratch/apk-main.png' });
-
-// 10. Reopen app: stays paired, no pairing screen
-await page.close();
-page = await openApp({ SUPABASE_URL: API, SUPABASE_ANON_KEY: 'test-anon' });
-ok(await waitFor(() => visible(page, 's-main')), 'reopen: still paired');
-
-ok(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
+for (const p of [pas, drv]) ok(p.errors.length === 0, `${p.who}: no page errors ${p.errors.join('; ')}`);
+await pas.screenshot({ path: '/tmp/claude-0/-home-user/4b14ac94-30f8-537c-b795-b94c25bc5146/scratchpad/passenger.png' });
 await browser.close();
+console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
 process.exit(failed ? 1 : 0);

@@ -1,6 +1,6 @@
 {
   "appId": "in.fingertip.driver",
-  "appName": "Fingertip Driver",
+  "appName": "Fingertip Auto",
   "webDir": "www",
   "android": { "allowMixedContent": false },
   "plugins": {

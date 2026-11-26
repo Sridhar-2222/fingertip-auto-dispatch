@@ -186,7 +186,7 @@ begin
     -- keep the job log small
     perform cron.unschedule(jobid) from cron.job where jobname = 'fingertip-cron-log-cleanup';
     perform cron.schedule('fingertip-cron-log-cleanup', '0 3 * * *',
-      $q$delete from cron.job_run_details where end_time < now() - interval '2 days'$q$);
+      $q$delete from cron.job_run_details where end_time < now() - interval '2 days' and jobid in (select jobid from cron.job where jobname like 'fingertip-%')$q$);
   else
     raise notice 'pg_cron not available here — enable "pg_cron" under Database → Extensions, then re-run this block';
   end if;
