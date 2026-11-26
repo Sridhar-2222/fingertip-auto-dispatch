@@ -1,7 +1,7 @@
 // LOCAL TESTING ONLY. Drives the real app (www/) as TWO phones in headless Chromium:
 // a passenger at Karimnagar bus stand and an auto driver 1 km north.
 // The database functions are replaced by a small in-memory stand-in (same names and
-// answers as supabase/migrations/20261125180000_app_device_keys.sql + 20261126044419_ride_start_code.sql). Voice and phone
+// answers as supabase/migrations/20261125180000_app_device_keys.sql + 20261126044419_ride_start_code.sql + 20261126130000_passenger_pin.sql). Voice and phone
 // plugins are fakes that record what was spoken and return scripted speech.
 // Usage: node test/app.test.mjs   (needs the playwright package; Chromium is pre-installed)
 import { createRequire } from 'node:module';
@@ -18,7 +18,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) failed+
 // ---------------- in-memory stand-in for the auto_* database functions ----------------
 const db = {
   drivers: [{ id: 'd1', name: 'Ramesh', name_te: 'రమేష్', phone: '919000000011', auto_number: 'TS02T0011', status: 'OFFLINE', lat: null, lng: null, pair_code: '111111', pair_fails: 0 }],
-  passengers: [{ id: 'p1', name: 'Lakshmi', phone: '919000000022', pair_code: '222222', pair_fails: 0 }],
+  passengers: [{ id: 'p1', name: 'Lakshmi', phone: '919000000022', pair_code: '222222', pair_fails: 0, pin: '4821' }],
   devices: {}, rides: [], pings: [],
 };
 const dist = (a, b) => { const R = 6371, r = Math.PI / 180, x = (b.lng - a.lng) * r * Math.cos((a.lat + b.lat) * r / 2), y = (b.lat - a.lat) * r; return Math.hypot(x, y) * R; };
@@ -66,7 +66,7 @@ const fns = {
   auto_book({ p_key, p_lat, p_lng, p_said, p_place }) {
     const pa = db.passengers.find((r) => r.id === dev(p_key).id);
     if (db.rides.some((r) => r.pid === pa.id && ['SEARCHING', 'CONFIRMED'].includes(r.status))) return { ok: false, reason: 'already_booked' };
-    const r = { id: 'r' + (db.rides.length + 1), code: '4821', pid: pa.id, phone: pa.phone, dest: p_place || p_said, lat: p_lat, lng: p_lng, status: 'SEARCHING', expires: Date.now() + 30000, said: p_said };
+    const r = { id: 'r' + (db.rides.length + 1), code: pa.pin, pid: pa.id, phone: pa.phone, dest: p_place || p_said, lat: p_lat, lng: p_lng, status: 'SEARCHING', expires: Date.now() + 30000, said: p_said };
     db.rides.push(r);
     for (const x of db.drivers) {
       if (x.status !== 'AVAILABLE' || x.lat == null) continue;
@@ -178,7 +178,8 @@ ok((await pas.textContent('#pRide')).includes('TS02T0011'), 'passenger sees auto
 ok((await said(pas)).includes('ఆటో దొరికింది'), 'passenger hears "auto found"');
 
 // --- Rapido-style code: on the passenger's screen only; driver types / says it to start ---
-ok((await pas.textContent('#pCode4')).trim() === '4821', 'passenger sees ride code 4821 big');
+ok((await pas.textContent('#hSub')).includes('4821'), 'passenger PIN always on screen (header)');
+ok((await pas.textContent('#pCode4')).trim() === '4821', 'passenger sees PIN 4821 big at pickup');
 ok((await said(pas)).includes('4 8 2 1'), 'passenger hears the ride code');
 ok(!(await drv.textContent('#rideBox')).includes('4821'), 'driver screen does NOT show the code');
 ok(!(await drv.$('#rDone')), 'no "Trip done" before the trip is started');
