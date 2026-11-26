@@ -238,7 +238,7 @@
         : '⚪ ఆఫ్ డ్యూటీ<small>OFF DUTY · డ్యూటీ ప్రారంభించడానికి నొక్కండి</small>';
       $('stTitle').textContent = !onDuty ? '😴 డ్యూటీ ఆఫ్' : ride ? '🛺 రైడ్‌లో ఉన్నారు' : '⏳ రైడ్‌ల కోసం వేచి ఉన్నాం';
       $('stText').textContent = !onDuty ? 'డ్యూటీ ఆన్ చేస్తేనే రైడ్‌లు వస్తాయి. Turn on duty to get rides.'
-        : 'ఫోన్ జేబులో ఉన్నా 3 కి.మీ. లోపల రైడ్ వస్తే అలర్ట్ వస్తుంది. You get an alert for rides within 3 km, even with the phone in your pocket.';
+        : 'ఫోన్ జేబులో ఉన్నా 6 కి.మీ. లోపల రైడ్ వస్తే అలర్ట్ వస్తుంది. You get an alert for rides within 6 km, even with the phone in your pocket.';
       const box = $('rideBox');
       box.textContent = '';
       if (!ride) return;
