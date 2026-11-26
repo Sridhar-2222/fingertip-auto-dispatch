@@ -53,6 +53,7 @@ input{min-height:58px;border-radius:14px;border:1px solid var(--line);padding:0 
 .places button{min-height:64px;border-radius:14px;border:2px solid var(--line);background:var(--panel);color:var(--ink);font-weight:700;font-size:17px;line-height:1.25}
 .said{font-size:24px;font-weight:800;white-space:pre-line}
 .state{border-radius:16px;padding:16px;background:var(--warn)}
+.pinCard{border-radius:16px;padding:14px;background:#fff3c4;text-align:center;border:2px solid #e0a800}.pinCard>div:first-child{font-weight:700;font-size:18px}.pinBig{font-size:56px;font-weight:900;letter-spacing:.3em;margin:4px 0}.pinCard small{font-size:14px;color:#333}
 .state h2{margin:0 0 6px;font-size:22px}
 .roles{display:grid;gap:14px}
 .roles button{min-height:120px;border-radius:22px;border:0;color:#fff;font-size:26px;font-weight:800;line-height:1.3}
@@ -99,6 +100,7 @@ input{min-height:58px;border-radius:14px;border:1px solid var(--line);padding:0 
 
   <section class="screen" id="s-pass">
     <div id="pBook" style="display:flex;flex-direction:column;gap:14px">
+      <div class="pinCard" id="pinCard" hidden><div>🔐 మీ PIN · Your PIN</div><div class="pinBig" id="pinBig"></div><small>ఆటో ఎక్కినప్పుడు డ్రైవర్‌కి చెప్పండి · Tell the driver this when you get in</small></div>
       <button class="mic" id="pMic">🎤 ఎక్కడికి వెళ్ళాలి?<small>WHERE TO? · నొక్కి చెప్పండి · tap and speak</small></button>
       <div class="card" id="pSaidBox" hidden><div class="muted">మీరు చెప్పింది · You said</div><div class="said" id="pSaid"></div>
         <div class="row" style="margin-top:12px"><button class="btn solid" id="pGo">✅ ఆటో బుక్ · Book</button><button class="btn" id="pAgain">🎤 మళ్ళీ · Again</button></div></div>
