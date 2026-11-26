@@ -524,6 +524,8 @@
       me = r;
       $('hName').textContent = me.name;
       $('hSub').textContent = me.pin ? `🔐 మీ PIN · Your PIN ${me.pin}` : '🧍 ప్రయాణికుడు · Passenger';
+      $('pinBig').textContent = me.pin ? String(me.pin).split('').join(' ') : '';
+      $('pinCard').hidden = !me.pin;
       const box = $('pPlaces'); box.textContent = '';
       for (const [k, p] of Object.entries(PLACES)) {
         const b = document.createElement('button');

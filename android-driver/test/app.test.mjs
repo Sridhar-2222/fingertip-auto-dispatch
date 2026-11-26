@@ -152,6 +152,7 @@ ok((await pas.getAttribute('#pWa', 'href')).includes('wa.me/917842449808?text=RE
 await pas.fill('#pPhone', '9000000022'); await pas.fill('#pCode', '222222'); await pas.click('#pBtn');
 await pas.waitForSelector('#s-pass.on');
 ok((await pas.textContent('#hName')).includes('Lakshmi'), 'passenger paired, name shown');
+ok((await pas.textContent('#pinBig')).replace(/\s/g, '') === '4821' && await pas.locator('#pinCard').isVisible(), 'passenger PIN big card on the booking screen');
 ok(await pas.evaluate(() => !!localStorage.getItem('rxf-auto-device')), 'device key kept on the phone');
 
 // --- driver goes on duty ---
