@@ -1,6 +1,8 @@
 # Builds the Fingertip Driver Android app (APK) on GitHub's free servers.
 # Runs on every push to android-driver/, or by hand: Actions → "Build driver APK" → Run workflow.
 # Download: open the finished run → Artifacts → fingertip-driver-apk.
+# Builds from main are also published at one fixed public link (no GitHub login, no zip):
+#   https://github.com/Sridhar-2222/fingertip-auto-dispatch/releases/download/test-app/fingertip-auto.apk
 #
 # Optional repository secrets (Settings → Secrets and variables → Actions):
 #   SUPABASE_URL       e.g. https://abcd1234.supabase.co
@@ -17,6 +19,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: android-driver
@@ -66,3 +70,12 @@ jobs:
           name: fingertip-driver-apk
           path: android-driver/fingertip-driver.apk
           retention-days: 30
+
+      - name: Publish to the fixed download link (main only)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp fingertip-driver.apk fingertip-auto.apk
+          gh release view test-app >/dev/null 2>&1 || gh release create test-app --prerelease --title "Fingertip Auto — test app" --notes "Latest test build from main. Install on Android: allow 'install unknown apps' when asked."
+          gh release upload test-app fingertip-auto.apk --clobber
