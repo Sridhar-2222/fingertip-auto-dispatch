@@ -187,6 +187,7 @@
     pendingRole = b.dataset.role;
     $('pRole').textContent = pendingRole === 'driver' ? '🛺 ఆటో డ్రైవర్ · Auto driver' : '🧍 ప్రయాణికుడు · Passenger';
     $('pErr').textContent = '';
+    $('pWa').hidden = pendingRole !== 'passenger';
     show('pair');
   }));
   $('pBack').addEventListener('click', () => show('role'));
@@ -211,6 +212,13 @@
     let watcherId = null, geoWatch = null, lastFix = null, lastSentAt = 0, lastSentFix = null;
     let hbTimer = null, pollTimer = null, alertTimer = null;
     const skipped = new Set();
+    // Quick messages with the passenger during a ride (ride_messages; WhatsApp passengers get them on WhatsApp).
+    let msgs = [], msgRide = null;
+    const QUICK = [
+      ['✅ వచ్చేశాను', "I've arrived"], ['⏱ 2 నిమిషాల్లో వస్తాను', 'Coming in 2 minutes'],
+      ['🚦 ట్రాఫిక్‌లో ఉన్నాను', "I'm in traffic"], ['📍 మీ లొకేషన్ పంపండి', 'Please send your location'],
+      ['📞 కాల్ చేస్తాను', "I'll call you"],
+    ];
 
     async function start() {
       const r = await rpc('auto_driver_me', { p_key: dev.key });
@@ -248,6 +256,8 @@
         <div class="big" id="rPhone"></div><div id="rDest"></div>
         <div class="row" style="margin-top:10px"><a class="btn solid" id="rCall">📞 కాల్ · Call</a><button class="btn" id="rRoute">🗺️ దారి · Route</button></div>
         <button class="btn" id="rSay" style="margin-top:10px">🔊 మళ్ళీ వినండి · Hear again</button>
+        <div class="msgs" id="rMsgs" aria-live="polite"></div>
+        <div class="quick" id="rQuick"></div>
         ${ride.started ? `<div class="big" style="margin-top:10px">${T.started}</div>
         <button class="btn solid" id="rDone" style="margin-top:10px">✅ ట్రిప్ పూర్తి · Trip done</button>`
         : `<label style="display:block;margin-top:12px">🔐 ప్రయాణికుడి PIN · Passenger's PIN
@@ -259,6 +269,13 @@
       $('rCall').href = 'tel:+' + ride.passenger_phone;
       $('rRoute').onclick = () => openMap(ride.pickup_lat, ride.pickup_lng);
       $('rSay').onclick = () => sayPickup(null);
+      const q = $('rQuick');
+      q.innerHTML = '<div class="muted">💬 ప్రయాణికుడికి చెప్పండి · Tell the passenger</div>';
+      QUICK.forEach(([te, en]) => {
+        const b = document.createElement('button'); b.className = 'btn qbtn'; b.textContent = `${te} · ${en}`;
+        b.onclick = () => sendQuick(`${te} · ${en}`); q.append(b);
+      });
+      renderMsgs();
       if (!ride.started) {
         const inp = $('rCodeIn');
         inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 4); };
@@ -292,6 +309,43 @@
         else if (r.reason === 'locked') toast(T.codeLocked);
         else toast(T.net);
       } catch (e) { toast(T.net); }
+    }
+    async function sendQuick(body) {
+      if (!ride) return;
+      try {
+        const r = await rpc('auto_driver_say', { p_key: dev.key, p_body: body });
+        if (r.ok) { msgs.push({ id: 'me' + Date.now(), from: 'driver', body }); renderMsgs(); toast('✅ పంపాం · Sent'); }
+        else toast(r.reason === 'too_many' ? 'చాలా మెసేజ్‌లు. కాల్ చేయండి · Too many messages, please call' : T.net);
+      } catch (e) { toast(T.net); }
+    }
+    function renderMsgs() {
+      const box = $('rMsgs'); if (!box) return;
+      box.textContent = '';
+      msgs.slice(-6).forEach((m) => {
+        const el = document.createElement('div'); el.className = 'msg ' + (m.from === 'driver' ? 'me' : 'them');
+        el.textContent = (m.from === 'driver' ? '🛺 మీరు · You: ' : '🧍 ప్రయాణికుడు · Passenger: ') + m.body;
+        box.append(el);
+      });
+    }
+    // Every poll while a ride is on: new passenger messages are shown, beeped and read aloud.
+    async function pollMsgs() {
+      if (!ride) { msgs = []; msgRide = null; return; }
+      if (msgRide !== ride.ride_id) { msgs = []; msgRide = ride.ride_id; }
+      try {
+        const r = await rpc('auto_driver_messages', { p_key: dev.key });
+        if (!r || !r.ok || !Array.isArray(r.messages)) return;
+        const known = new Set(msgs.filter((m) => typeof m.id === 'number').map((m) => m.id));
+        const fresh = r.messages.filter((m) => !known.has(m.id));
+        msgs = r.messages.slice();
+        renderMsgs();
+        const news = fresh.filter((m) => m.from === 'passenger');
+        if (news.length) {
+          beep();
+          const last = news[news.length - 1].body;
+          toast('💬 ' + last);
+          speak(`ప్రయాణికుడి మెసేజ్: ${last.split(' · ')[0]}`, `Message from the passenger: ${last}`);
+        }
+      } catch (e) { /* offline: try next tick */ }
     }
     function sayPickup(km) {
       if (!ride) return Promise.resolve();
@@ -370,6 +424,7 @@
         ride = r.ride || null;
         if (hadRide && !ride) { toast(T.cancelled); speak('ప్రయాణికుడు రైడ్ రద్దు చేశారు.', 'The passenger cancelled the ride.'); KA && KA.allowSleep().catch(() => {}); render(); }
         else if (ride && (!hadRide || ride.started !== wasStarted)) render();
+        if (ride) pollMsgs(); else if (msgs.length) { msgs = []; msgRide = null; }
         const p = r.alert;
         if (onDuty && !ride && p && !alertP && !skipped.has(p.ride_id)) openAlert(p);
         else if (alertP && (!p || p.ride_id !== alertP.ride_id)) closeAlert(T.closed);
