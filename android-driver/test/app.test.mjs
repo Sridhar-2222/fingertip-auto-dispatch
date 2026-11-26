@@ -1,7 +1,7 @@
 // LOCAL TESTING ONLY. Drives the real app (www/) as TWO phones in headless Chromium:
 // a passenger at Karimnagar bus stand and an auto driver 1 km north.
 // The database functions are replaced by a small in-memory stand-in (same names and
-// answers as supabase/migrations/20261125180000_app_device_keys.sql + 20261126044419_ride_start_code.sql + 20261126130000_passenger_pin.sql). Voice and phone
+// answers as supabase/migrations/20261125180000_app_device_keys.sql + 20261126044419_ride_start_code.sql + 20261126050047_passenger_pin.sql). Voice and phone
 // plugins are fakes that record what was spoken and return scripted speech.
 // Usage: node test/app.test.mjs   (needs the playwright package; Chromium is pre-installed)
 import { createRequire } from 'node:module';
