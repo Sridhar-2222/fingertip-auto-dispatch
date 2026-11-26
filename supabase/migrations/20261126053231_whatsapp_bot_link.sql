@@ -9,8 +9,9 @@
 --     has not been told yet (driver coming, trip started, done, no auto,
 --     cancelled by the driver side). Each is returned once.
 --   * a 5-second timer that wakes the bot only when there is news
---     (URL + secret from Supabase Vault: fingertip_bot_url, fingertip_bot_secret).
--- Rides only — nothing medicine-related. Additive: 1 column, 3 functions, 1 timer.
+--     (URL + secret from Supabase Vault: fingertip_bot_url, fingertip_bot_secret; the secret is
+--     made here from random bytes and never shown — the bot checks it with auto_wa_key_ok).
+-- Rides only — nothing medicine-related. Additive: 1 column, 5 functions, 2 Vault entries, 1 timer.
 -- =====================================================================
 
 alter table public.ride_requests add column if not exists wa_told text;
@@ -76,6 +77,25 @@ begin
   return true;
 end $$;
 
+-- The bot checks the timer's key against Vault (service role only).
+create or replace function public.auto_wa_key_ok(p_key text)
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select coalesce(length(p_key) >= 32 and p_key = (select decrypted_secret from vault.decrypted_secrets where name = 'fingertip_bot_secret'), false)
+$$;
+
+-- Vault: where the bot lives, and a random key made here (never shown anywhere).
+do $$
+begin
+  if not exists (select 1 from vault.secrets where name = 'fingertip_bot_url') then
+    perform vault.create_secret('https://fsftbvchnifshndssowe.supabase.co/functions/v1/smooth-responder', 'fingertip_bot_url', 'Fingertip WhatsApp bot (ride news)');
+  end if;
+  if not exists (select 1 from vault.secrets where name = 'fingertip_bot_secret') then
+    perform vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), 'fingertip_bot_secret', 'Key the ride-news timer sends to the bot');
+  end if;
+end $$;
+
+revoke all on function public.auto_wa_key_ok(text) from public, anon, authenticated;
+grant execute on function public.auto_wa_key_ok(text) to service_role;
 revoke all on function public.auto_wa_book_svc(text, text, text) from public, anon, authenticated;
 revoke all on function public.auto_wa_event(public.ride_requests) from public, anon, authenticated;
 revoke all on function public.auto_wa_due_svc() from public, anon, authenticated;
