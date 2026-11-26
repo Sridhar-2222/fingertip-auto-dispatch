@@ -73,7 +73,8 @@
   async function rpc(fn, args) {
     const res = await fetch(API + fn, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_ANON_KEY },
+      // Name the schema on every call: the server's default schema is not 'public' (26 Nov 2026), so calls without it 404.
+      headers: { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_ANON_KEY, 'Content-Profile': 'public', 'Accept-Profile': 'public' },
       body: JSON.stringify(args || {}),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
