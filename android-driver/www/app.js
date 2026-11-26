@@ -40,7 +40,7 @@
     wrongCode: 'కోడ్ తప్పు. మిగిలిన ప్రయత్నాలు · Wrong code. Tries left',
     codeLocked: 'చాలా సార్లు తప్పు. 15 నిమిషాల తర్వాత · Too many wrong tries. Wait 15 minutes',
     not_started: 'ముందు ప్రయాణికుడి కోడ్‌తో ట్రిప్ ప్రారంభించండి · Start the trip with the passenger\'s code first',
-    needCode: 'ప్రయాణికుడు చెప్పిన 4 అంకెల కోడ్ ఇవ్వండి · Enter the 4-digit code the passenger tells you',
+    needCode: 'ప్రయాణికుడు చెప్పిన 4 అంకెల PIN ఇవ్వండి · Enter the 4-digit PIN the passenger tells you',
     noGps: 'GPS అనుమతి ఇవ్వండి · Please allow location',
     noMic: 'మైక్ అనుమతి ఇవ్వండి లేదా ప్లేస్ ఎంచుకోండి · Allow the microphone, or pick a place',
     notHeard: 'వినిపించలేదు, మళ్ళీ చెప్పండి · Did not catch that, please try again',
@@ -249,7 +249,7 @@
         <button class="btn" id="rSay" style="margin-top:10px">🔊 మళ్ళీ వినండి · Hear again</button>
         ${ride.started ? `<div class="big" style="margin-top:10px">${T.started}</div>
         <button class="btn solid" id="rDone" style="margin-top:10px">✅ ట్రిప్ పూర్తి · Trip done</button>`
-        : `<label style="display:block;margin-top:12px">🔐 ప్రయాణికుడి కోడ్ · Passenger's code
+        : `<label style="display:block;margin-top:12px">🔐 ప్రయాణికుడి PIN · Passenger's PIN
           <input id="rCodeIn" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="••••" style="width:100%;text-align:center;letter-spacing:.4em"></label>
         <div class="row" style="margin-top:10px"><button class="btn" id="rCodeMic">🎤 కోడ్ చెప్పండి · Say code</button><button class="btn solid" id="rStart">▶️ ట్రిప్ ప్రారంభం · Start trip</button></div>`}`;
       box.append(el);
@@ -467,7 +467,7 @@
       if (!r || !r.ok) { signOut(); toast('మళ్ళీ చేరండి · Please join again'); return; }
       me = r;
       $('hName').textContent = me.name;
-      $('hSub').textContent = '🧍 ప్రయాణికుడు · Passenger';
+      $('hSub').textContent = me.pin ? `🔐 మీ PIN · Your PIN ${me.pin}` : '🧍 ప్రయాణికుడు · Passenger';
       const box = $('pPlaces'); box.textContent = '';
       for (const [k, p] of Object.entries(PLACES)) {
         const b = document.createElement('button');
@@ -559,9 +559,9 @@
           <div>📍 ${d.distance_km != null ? Number(d.distance_km).toFixed(1) + ' కి.మీ. దూరం · km away' : ''}</div>
           <div class="muted">➡️ ${esc(placeLabel(r.destination_name))}</div></div>
           ${r.started ? `<div class="state"><h2>▶️ ట్రిప్ ప్రారంభమైంది · Trip started</h2></div>`
-          : `<div class="state" id="pCodeBox" style="text-align:center"><div>🔐 మీ రైడ్ కోడ్ · Your ride code</div>
+          : `<div class="state" id="pCodeBox" style="text-align:center"><div>🔐 మీ PIN · Your PIN</div>
           <div id="pCode4" style="font-size:52px;font-weight:900;letter-spacing:.3em">${esc(r.ride_code)}</div>
-          <div class="muted">ఆటో ఎక్కినప్పుడు ఈ కోడ్ డ్రైవర్‌కి చెప్పండి. ఎవరికీ డబ్బులు ఇవ్వనక్కర్లేదు. · Tell this code to the driver when you get in.</div></div>`}
+          <div class="muted">ఆటో ఎక్కినప్పుడు ఈ PIN డ్రైవర్‌కి చెప్పండి. · Tell this PIN to the driver when you get in.</div></div>`}
           <div class="row"><a class="btn solid" href="tel:+${esc(d.phone || '')}">📞 కాల్ · Call</a><button class="btn" id="pSee">🗺️ ఆటో ఎక్కడ · Where</button></div>
           <button class="btn" id="pCancel">❌ రద్దు · Cancel</button>`;
       } else if (r.status === 'NO_AUTO') {
@@ -582,8 +582,8 @@
       const d = r.driver || {};
       if (r.status === 'SEARCHING') speak(`${placeSay(r.destination_name)} కి ఆటో వెతుకుతున్నాం. కొంచెం ఆగండి.`, 'Finding an auto for you. Please wait.');
       else if (r.status === 'CONFIRMED' && r.started) speak('ట్రిప్ ప్రారంభమైంది. సురక్షిత ప్రయాణం.', 'Trip started. Have a safe ride.');
-      else if (r.status === 'CONFIRMED') speak(`ఆటో దొరికింది. ${d.name_te || d.name || ''}, ఆటో నంబర్ ${String(d.auto_number || '').split('').join(' ')}. ${d.distance_km != null ? kmSay(d.distance_km) + ' దూరంలో ఉన్నారు.' : ''} మీ రైడ్ కోడ్ ${String(r.ride_code || '').split('').join(' ')}. ఆటో ఎక్కినప్పుడు డ్రైవర్‌కి చెప్పండి.`,
-        `Auto found. ${d.name || ''}, auto number ${d.auto_number || ''}. Your ride code is ${String(r.ride_code || '').split('').join(' ')}.`);
+      else if (r.status === 'CONFIRMED') speak(`ఆటో దొరికింది. ${d.name_te || d.name || ''}, ఆటో నంబర్ ${String(d.auto_number || '').split('').join(' ')}. ${d.distance_km != null ? kmSay(d.distance_km) + ' దూరంలో ఉన్నారు.' : ''} మీ PIN ${String(r.ride_code || '').split('').join(' ')}. ఆటో ఎక్కినప్పుడు డ్రైవర్‌కి చెప్పండి.`,
+        `Auto found. ${d.name || ''}, auto number ${d.auto_number || ''}. Your PIN is ${String(r.ride_code || '').split('').join(' ')}.`);
       else if (r.status === 'NO_AUTO') speak('క్షమించండి, దగ్గరలో ఆటో దొరకలేదు. కొంచెం సేపటి తర్వాత మళ్ళీ ప్రయత్నించండి.', 'Sorry, no auto nearby. Please try again soon.');
       else if (r.status === 'COMPLETED') speak('ప్రయాణం పూర్తయింది. ధన్యవాదాలు.', 'Trip done. Thank you.');
     }
