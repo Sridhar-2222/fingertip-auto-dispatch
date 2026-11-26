@@ -19,7 +19,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) failed+
 const db = {
   drivers: [{ id: 'd1', name: 'Ramesh', name_te: 'రమేష్', phone: '919000000011', auto_number: 'TS02T0011', status: 'OFFLINE', lat: null, lng: null, pair_code: '111111', pair_fails: 0 }],
   passengers: [{ id: 'p1', name: 'Lakshmi', phone: '919000000022', pair_code: '222222', pair_fails: 0, pin: '4821' }],
-  devices: {}, rides: [], pings: [],
+  devices: {}, rides: [], pings: [], msgs: [],
 };
 const dist = (a, b) => { const R = 6371, r = Math.PI / 180, x = (b.lng - a.lng) * r * Math.cos((a.lat + b.lat) * r / 2), y = (b.lat - a.lat) * r; return Math.hypot(x, y) * R; };
 const dev = (k) => db.devices[k];
@@ -53,6 +53,15 @@ const fns = {
     r.status = 'CONFIRMED'; r.driver_id = x.id; x.status = 'BUSY';
     db.pings.forEach((p) => { if (p.ride_id === r.id) p.status = p.driver_id === x.id ? 'ACCEPTED' : 'TAKEN'; });
     return { ok: true, ride_id: r.id, passenger_phone: r.phone, destination_name: r.dest, pickup_lat: r.lat, pickup_lng: r.lng };
+  },
+  auto_driver_say({ p_key, p_body }) {
+    const r = db.rides.find((q) => q.driver_id === dev(p_key)?.id && q.status === 'CONFIRMED');
+    if (!r) return { ok: false, reason: 'no_ride' };
+    db.msgs.push({ id: db.msgs.length + 1, ride: r.id, from: 'driver', body: p_body }); return { ok: true };
+  },
+  auto_driver_messages({ p_key }) {
+    const r = db.rides.find((q) => q.driver_id === dev(p_key)?.id && q.status === 'CONFIRMED');
+    return { ok: true, messages: r ? db.msgs.filter((m) => m.ride === r.id).map(({ id, from, body }) => ({ id, from, body })) : [] };
   },
   auto_driver_skip({ p_key, p_ride_id }) { db.pings.forEach((p) => { if (p.ride_id === p_ride_id && p.driver_id === dev(p_key).id) p.status = 'DECLINED'; }); return { ok: true }; },
   auto_driver_start({ p_key, p_ride_id, p_code }) {
@@ -130,6 +139,7 @@ const drv = await phone('driver', ['సరే'], { latitude: 18.4438, longitude:
 // --- pairing ---
 ok(await pas.locator('#s-role.on').isVisible(), 'first open shows Passenger / Driver choice');
 await drv.click('[data-role=driver]');
+ok(await drv.locator('#pWa').isHidden(), 'driver join screen has no WhatsApp code link');
 await drv.fill('#pPhone', '9000000011'); await drv.fill('#pCode', '000000'); await drv.click('#pBtn');
 await drv.waitForTimeout(200);
 ok((await drv.textContent('#pErr')).includes('Wrong code'), 'wrong code is refused');
@@ -138,6 +148,7 @@ await drv.waitForSelector('#s-main.on');
 ok((await drv.textContent('#hName')).includes('రమేష్'), 'driver paired, name shown');
 
 await pas.click('[data-role=passenger]');
+ok((await pas.getAttribute('#pWa', 'href')).includes('wa.me/917842449808?text=REGISTER') && await pas.locator('#pWa').isVisible(), 'passenger join screen links to REGISTER on WhatsApp');
 await pas.fill('#pPhone', '9000000022'); await pas.fill('#pCode', '222222'); await pas.click('#pBtn');
 await pas.waitForSelector('#s-pass.on');
 ok((await pas.textContent('#hName')).includes('Lakshmi'), 'passenger paired, name shown');
@@ -171,6 +182,16 @@ await drv.waitForTimeout(300);
 ok((await drv.evaluate(() => __opened.join())).includes('google.com/maps/dir'), 'map route opened after accepting');
 ok((await said(drv)).includes('రైడ్ మీది'), 'driver heard "ride is yours" + destination');
 ok((await drv.textContent('#rPhone')).includes('919000000022'), 'driver sees passenger phone');
+
+// --- quick messages: driver taps a ready message; a passenger message (from WhatsApp) shows and is read aloud ---
+ok((await drv.$$('#rQuick .qbtn')).length === 5, 'driver sees 5 quick message buttons');
+await drv.click('#rQuick .qbtn >> nth=0'); await drv.waitForTimeout(300);
+ok(db.msgs.length === 1 && db.msgs[0].from === 'driver' && db.msgs[0].body.includes('arrived'), 'driver quick message "వచ్చేశాను" saved for the passenger');
+db.msgs.push({ id: 2, ride: db.rides[0].id, from: 'passenger', body: 'నేను కింద / బయట ఉన్నాను · I am downstairs' });
+await drv.waitForSelector('#rMsgs .msg.them', { timeout: 6000 });
+ok((await drv.textContent('#rMsgs')).includes('కింద'), 'driver sees the passenger message');
+await drv.waitForTimeout(300);
+ok((await said(drv)).includes('ప్రయాణికుడి మెసేజ్'), 'driver hears the passenger message aloud');
 
 // --- passenger sees and hears the driver ---
 await pas.waitForSelector('text=Auto is coming', { timeout: 6000 });

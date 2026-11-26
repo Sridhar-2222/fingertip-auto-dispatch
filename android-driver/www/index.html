@@ -27,7 +27,10 @@ main{padding:16px;display:flex;flex-direction:column;gap:14px;max-width:560px;ma
 .btn.solid{background:var(--teal);color:#fff}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ride{background:var(--warn);border-radius:16px;padding:14px 16px}
+[hidden]{display:none!important}
 .ride h2{margin:0 0 6px;font-size:20px}
+.msgs{display:flex;flex-direction:column;gap:6px;margin-top:10px}.msg{border-radius:12px;padding:8px 10px;font-size:17px;background:#fff;color:#111}.msg.me{align-self:flex-end;background:#d7f2ee}
+.quick{display:grid;gap:8px;margin-top:10px}.qbtn{min-height:52px;font-size:16px;background:#fff}
 .big{font-size:22px;font-weight:800}
 label{display:grid;gap:6px;font-weight:600}
 input{min-height:58px;border-radius:14px;border:1px solid var(--line);padding:0 14px;font-size:22px;background:var(--panel);color:var(--ink);letter-spacing:.04em}
@@ -88,6 +91,7 @@ input{min-height:58px;border-radius:14px;border:1px solid var(--line);padding:0 
       <label>🔑 కోడ్ · Code<input id="pCode" inputmode="numeric" maxlength="6" placeholder="••••••" required></label>
       <div class="err" id="pErr" role="alert"></div>
       <button class="btn solid" id="pBtn">✅ చేరండి · Join</button>
+      <a class="btn" id="pWa" hidden href="https://wa.me/917842449808?text=REGISTER" target="_blank" rel="noopener">💬 కోడ్ లేదా? వాట్సాప్‌లో తీసుకోండి · No code? Get one on WhatsApp</a>
       <button class="btn" type="button" id="pBack">↩️ వెనక్కి · Back</button>
     </form>
   </section>
