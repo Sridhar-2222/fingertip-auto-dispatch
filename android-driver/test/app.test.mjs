@@ -1,7 +1,7 @@
 // LOCAL TESTING ONLY. Drives the real app (www/) as TWO phones in headless Chromium:
 // a passenger at Karimnagar bus stand and an auto driver 1 km north.
 // The database functions are replaced by a small in-memory stand-in (same names and
-// answers as supabase/migrations/20261125180000_app_device_keys.sql). Voice and phone
+// answers as supabase/migrations/20261125180000_app_device_keys.sql + 20261126100000_ride_start_code.sql). Voice and phone
 // plugins are fakes that record what was spoken and return scripted speech.
 // Usage: node test/app.test.mjs   (needs the playwright package; Chromium is pre-installed)
 import { createRequire } from 'node:module';
@@ -45,17 +45,23 @@ const fns = {
     const r = db.rides.find((q) => q.driver_id === x.id && q.status === 'CONFIRMED');
     return { ok: true, status: x.status,
       alert: p ? { ride_id: p.ride_id, distance_km: p.km, destination_name: db.rides.find((q) => q.id === p.ride_id).dest, expires_at: new Date(p.expires).toISOString() } : null,
-      ride: r ? { ride_id: r.id, ride_code: r.code, passenger_phone: r.phone, destination_name: r.dest, pickup_lat: r.lat, pickup_lng: r.lng } : null };
+      ride: r ? { ride_id: r.id, started: !!r.started, passenger_phone: r.phone, destination_name: r.dest, pickup_lat: r.lat, pickup_lng: r.lng } : null };
   },
   auto_driver_accept({ p_key, p_ride_id }) {
     const x = db.drivers.find((r) => r.id === dev(p_key).id); const r = db.rides.find((q) => q.id === p_ride_id);
     if (r.status !== 'SEARCHING') return { ok: false, reason: 'taken' };
     r.status = 'CONFIRMED'; r.driver_id = x.id; x.status = 'BUSY';
     db.pings.forEach((p) => { if (p.ride_id === r.id) p.status = p.driver_id === x.id ? 'ACCEPTED' : 'TAKEN'; });
-    return { ok: true, ride_id: r.id, ride_code: r.code, passenger_phone: r.phone, destination_name: r.dest, pickup_lat: r.lat, pickup_lng: r.lng };
+    return { ok: true, ride_id: r.id, passenger_phone: r.phone, destination_name: r.dest, pickup_lat: r.lat, pickup_lng: r.lng };
   },
   auto_driver_skip({ p_key, p_ride_id }) { db.pings.forEach((p) => { if (p.ride_id === p_ride_id && p.driver_id === dev(p_key).id) p.status = 'DECLINED'; }); return { ok: true }; },
-  auto_driver_done({ p_key, p_ride_id }) { const r = db.rides.find((q) => q.id === p_ride_id); r.status = 'COMPLETED'; r.closed = Date.now(); db.drivers.find((x) => x.id === dev(p_key).id).status = 'AVAILABLE'; return { ok: true }; },
+  auto_driver_start({ p_key, p_ride_id, p_code }) {
+    const r = db.rides.find((q) => q.id === p_ride_id && q.driver_id === dev(p_key)?.id && q.status === 'CONFIRMED');
+    if (!r) return { ok: false, reason: 'not_your_ride' };
+    if (r.code !== p_code) { r.fails = (r.fails || 0) + 1; return r.fails >= 5 ? { ok: false, reason: 'locked' } : { ok: false, reason: 'wrong', left: 5 - r.fails }; }
+    r.started = true; return { ok: true };
+  },
+  auto_driver_done({ p_key, p_ride_id }) { const r = db.rides.find((q) => q.id === p_ride_id); if (!r.started) return { ok: false, reason: 'not_started' }; r.status = 'COMPLETED'; r.closed = Date.now(); db.drivers.find((x) => x.id === dev(p_key).id).status = 'AVAILABLE'; return { ok: true }; },
   auto_passenger_me({ p_key }) { const d = dev(p_key); if (d?.role !== 'passenger') return { ok: false, reason: 'not_paired' }; return { ok: true, ...db.passengers.find((r) => r.id === d.id) }; },
   auto_book({ p_key, p_lat, p_lng, p_said, p_place }) {
     const pa = db.passengers.find((r) => r.id === dev(p_key).id);
@@ -75,7 +81,7 @@ const fns = {
     const d = dev(p_key); const r = [...db.rides].reverse().find((q) => q.pid === d.id);
     if (!r) return { ok: true, ride: null };
     const x = db.drivers.find((y) => y.id === r.driver_id);
-    return { ok: true, ride: { ride_id: r.id, ride_code: r.code, status: r.status, destination_name: r.dest, expires_at: new Date(r.expires).toISOString(),
+    return { ok: true, ride: { ride_id: r.id, ride_code: r.code, started: !!r.started, status: r.status, destination_name: r.dest, expires_at: new Date(r.expires).toISOString(),
       closed_at: r.closed ? new Date(r.closed).toISOString() : null, drivers_alerted: db.pings.filter((p) => p.ride_id === r.id).length,
       driver: r.status === 'CONFIRMED' ? { name: x.name, name_te: x.name_te, auto_number: x.auto_number, phone: x.phone, lat: x.lat, lng: x.lng, distance_km: Math.round(dist(r, x) * 100) / 100 } : null } };
   },
@@ -170,6 +176,20 @@ ok((await drv.textContent('#rPhone')).includes('919000000022'), 'driver sees pas
 await pas.waitForSelector('text=Auto is coming', { timeout: 6000 });
 ok((await pas.textContent('#pRide')).includes('TS02T0011'), 'passenger sees auto number');
 ok((await said(pas)).includes('ఆటో దొరికింది'), 'passenger hears "auto found"');
+
+// --- Rapido-style code: on the passenger's screen only; driver types / says it to start ---
+ok((await pas.textContent('#pCode4')).trim() === '4821', 'passenger sees ride code 4821 big');
+ok((await said(pas)).includes('4 8 2 1'), 'passenger hears the ride code');
+ok(!(await drv.textContent('#rideBox')).includes('4821'), 'driver screen does NOT show the code');
+ok(!(await drv.$('#rDone')), 'no "Trip done" before the trip is started');
+await drv.fill('#rCodeIn', '1111'); await drv.click('#rStart'); await drv.waitForTimeout(300);
+ok(!db.rides[0].started && (await drv.textContent('#toast')).includes('4'), 'wrong code refused, tries left shown');
+await drv.evaluate(() => { __heard.push('నాలుగు ఎనిమిది రెండు ఒకటి'); });
+await drv.click('#rCodeMic');
+await drv.waitForSelector('#rDone', { timeout: 6000 });
+ok(db.rides[0].started === true, 'spoken Telugu code "నాలుగు ఎనిమిది రెండు ఒకటి" started the trip');
+await pas.waitForSelector('text=Trip started', { timeout: 6000 });
+ok(!(await pas.$('#pCode4')), 'passenger code hidden once the trip started');
 
 // --- trip done ---
 await drv.click('#rDone');

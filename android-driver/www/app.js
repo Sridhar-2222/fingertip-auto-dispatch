@@ -36,6 +36,11 @@
     finishFirst: 'ముందు రైడ్ పూర్తి చేయండి · Finish the ride first',
     yours: '✅ రైడ్ మీది! ప్రయాణికుడి వద్దకు వెళ్ళండి · Ride is yours!',
     done: 'ట్రిప్ పూర్తయింది · Trip done',
+    started: '▶️ ట్రిప్ ప్రారంభమైంది · Trip started',
+    wrongCode: 'కోడ్ తప్పు. మిగిలిన ప్రయత్నాలు · Wrong code. Tries left',
+    codeLocked: 'చాలా సార్లు తప్పు. 15 నిమిషాల తర్వాత · Too many wrong tries. Wait 15 minutes',
+    not_started: 'ముందు ప్రయాణికుడి కోడ్‌తో ట్రిప్ ప్రారంభించండి · Start the trip with the passenger\'s code first',
+    needCode: 'ప్రయాణికుడు చెప్పిన 4 అంకెల కోడ్ ఇవ్వండి · Enter the 4-digit code the passenger tells you',
     noGps: 'GPS అనుమతి ఇవ్వండి · Please allow location',
     noMic: 'మైక్ అనుమతి ఇవ్వండి లేదా ప్లేస్ ఎంచుకోండి · Allow the microphone, or pick a place',
     notHeard: 'వినిపించలేదు, మళ్ళీ చెప్పండి · Did not catch that, please try again',
@@ -49,6 +54,16 @@
   };
 
   const $ = (id) => document.getElementById(id);
+  // Spoken code -> 4 digits ('నాలుగు ఎనిమిది రెండు ఒకటి', 'four eight two one' or '4821'); '' if not found.
+  const NUM_WORDS = { 'సున్నా': 0, 'సున్న': 0, 'ఒకటి': 1, 'ఒక': 1, 'రెండు': 2, 'మూడు': 3, 'నాలుగు': 4, 'ఐదు': 5, 'అయిదు': 5,
+    'ఆరు': 6, 'ఏడు': 7, 'ఎనిమిది': 8, 'తొమ్మిది': 9, zero: 0, oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
+  function codeFromSpeech(text) {
+    for (const alt of String(text || '').split('|')) {
+      const d = alt.toLowerCase().split(/[\s,.-]+/).map((w) => (w in NUM_WORDS ? String(NUM_WORDS[w]) : w.replace(/\D/g, ''))).join('');
+      if (d.length === 4) return d;
+    }
+    return '';
+  }
   let dev = null; // { key, role, name }
   let pendingRole = null;
 
@@ -229,24 +244,53 @@
       if (!ride) return;
       const el = document.createElement('div'); el.className = 'ride';
       el.innerHTML = `<h2>🧍 ప్రయాణికుడిని పికప్ చేయండి · Pick up</h2>
-        <div class="big" id="rPhone"></div><div id="rDest"></div><div class="muted" id="rCode"></div>
+        <div class="big" id="rPhone"></div><div id="rDest"></div>
         <div class="row" style="margin-top:10px"><a class="btn solid" id="rCall">📞 కాల్ · Call</a><button class="btn" id="rRoute">🗺️ దారి · Route</button></div>
         <button class="btn" id="rSay" style="margin-top:10px">🔊 మళ్ళీ వినండి · Hear again</button>
-        <button class="btn solid" id="rDone" style="margin-top:10px">✅ ట్రిప్ పూర్తి · Trip done</button>`;
+        ${ride.started ? `<div class="big" style="margin-top:10px">${T.started}</div>
+        <button class="btn solid" id="rDone" style="margin-top:10px">✅ ట్రిప్ పూర్తి · Trip done</button>`
+        : `<label style="display:block;margin-top:12px">🔐 ప్రయాణికుడి కోడ్ · Passenger's code
+          <input id="rCodeIn" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="••••" style="width:100%;text-align:center;letter-spacing:.4em"></label>
+        <div class="row" style="margin-top:10px"><button class="btn" id="rCodeMic">🎤 కోడ్ చెప్పండి · Say code</button><button class="btn solid" id="rStart">▶️ ట్రిప్ ప్రారంభం · Start trip</button></div>`}`;
       box.append(el);
       $('rPhone').textContent = '+' + ride.passenger_phone;
       $('rDest').textContent = '➡️ ' + placeLabel(ride.destination_name);
-      $('rCode').textContent = 'రైడ్ కోడ్ · Ride code ' + (ride.ride_code || '');
       $('rCall').href = 'tel:+' + ride.passenger_phone;
       $('rRoute').onclick = () => openMap(ride.pickup_lat, ride.pickup_lng);
       $('rSay').onclick = () => sayPickup(null);
+      if (!ride.started) {
+        const inp = $('rCodeIn');
+        inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 4); };
+        $('rStart').onclick = () => startTrip(inp.value);
+        $('rCodeMic').onclick = async () => {
+          unlockAudio();
+          await speak('ప్రయాణికుడి కోడ్ చెప్పండి.', 'Say the passenger\'s code.');
+          const heard = await listen('కోడ్ చెప్పండి · Say the code');
+          if (heard === null) { toast(T.noMic); return; }
+          const c = codeFromSpeech(heard);
+          if (!c) { toast(T.notHeard); return; }
+          inp.value = c; startTrip(c);
+        };
+        return;
+      }
       $('rDone').onclick = async () => {
         try {
           const r = await rpc('auto_driver_done', { p_key: dev.key, p_ride_id: ride.ride_id });
           if (r.ok) { ride = null; KA && KA.allowSleep().catch(() => {}); toast(T.done); speak('ట్రిప్ పూర్తయింది. కొత్త రైడ్‌ల కోసం వేచి ఉన్నాం.', 'Trip done. Waiting for new rides.'); render(); }
-          else toast(T.net);
+          else toast(T[r.reason] || T.net);
         } catch (e) { toast(T.net); }
       };
+    }
+    // Pickup: the passenger tells the code shown on their phone; the driver types or says it.
+    async function startTrip(code) {
+      if (!ride || !/^\d{4}$/.test(code || '')) { toast(T.needCode); return; }
+      try {
+        const r = await rpc('auto_driver_start', { p_key: dev.key, p_ride_id: ride.ride_id, p_code: code });
+        if (r.ok) { ride.started = true; toast(T.started); speak('కోడ్ సరైనది. ట్రిప్ ప్రారంభమైంది.', 'Code correct. Trip started.'); render(); }
+        else if (r.reason === 'wrong') { toast(`${T.wrongCode}: ${r.left}`); speak('కోడ్ తప్పు. మళ్ళీ అడగండి.', 'Wrong code. Ask again.'); }
+        else if (r.reason === 'locked') toast(T.codeLocked);
+        else toast(T.net);
+      } catch (e) { toast(T.net); }
     }
     function sayPickup(km) {
       if (!ride) return Promise.resolve();
@@ -321,10 +365,10 @@
       try {
         const r = await rpc('auto_driver_poll', { p_key: dev.key });
         if (!r.ok) { if (r.reason === 'not_paired') { signOut(); toast('మళ్ళీ చేరండి · Please join again'); } return; }
-        const hadRide = !!ride;
+        const hadRide = !!ride, wasStarted = !!(ride && ride.started);
         ride = r.ride || null;
         if (hadRide && !ride) { toast(T.cancelled); speak('ప్రయాణికుడు రైడ్ రద్దు చేశారు.', 'The passenger cancelled the ride.'); KA && KA.allowSleep().catch(() => {}); render(); }
-        else if (!hadRide && ride) render();
+        else if (ride && (!hadRide || ride.started !== wasStarted)) render();
         const p = r.alert;
         if (onDuty && !ride && p && !alertP && !skipped.has(p.ride_id)) openAlert(p);
         else if (alertP && (!p || p.ride_id !== alertP.ride_id)) closeAlert(T.closed);
@@ -391,7 +435,7 @@
         const r = await rpc('auto_driver_accept', { p_key: dev.key, p_ride_id: p.ride_id });
         closeAlert();
         if (r.ok) {
-          ride = { ride_id: r.ride_id, ride_code: r.ride_code, passenger_phone: r.passenger_phone,
+          ride = { ride_id: r.ride_id, started: false, passenger_phone: r.passenger_phone,
             pickup_lat: r.pickup_lat, pickup_lng: r.pickup_lng, destination_name: r.destination_name };
           KA && KA.keepAwake().catch(() => {});
           toast(T.yours); render();
@@ -499,7 +543,7 @@
       $('pBook').hidden = !!open;
       const box = $('pRide');
       box.hidden = !(open || recent);
-      const state = r ? r.ride_id + ':' + r.status : '';
+      const state = r ? r.ride_id + ':' + r.status + (r.started ? ':s' : '') : '';
       if (!(open || recent)) { lastState = state; return; }
       let h = '';
       if (r.status === 'SEARCHING' || r.status === 'AWAITING_LOCATION') {
@@ -513,7 +557,11 @@
         h = `<div class="state" style="background:#dcfce7;color:#14532d"><h2>✅ ఆటో వస్తోంది! · Auto is coming</h2>
           <div class="said">${esc(d.name_te || d.name || '')}<br>🛺 ${esc(d.auto_number || '')}</div>
           <div>📍 ${d.distance_km != null ? Number(d.distance_km).toFixed(1) + ' కి.మీ. దూరం · km away' : ''}</div>
-          <div class="muted">రైడ్ కోడ్ · Ride code ${esc(r.ride_code)} · ➡️ ${esc(placeLabel(r.destination_name))}</div></div>
+          <div class="muted">➡️ ${esc(placeLabel(r.destination_name))}</div></div>
+          ${r.started ? `<div class="state"><h2>▶️ ట్రిప్ ప్రారంభమైంది · Trip started</h2></div>`
+          : `<div class="state" id="pCodeBox" style="text-align:center"><div>🔐 మీ రైడ్ కోడ్ · Your ride code</div>
+          <div id="pCode4" style="font-size:52px;font-weight:900;letter-spacing:.3em">${esc(r.ride_code)}</div>
+          <div class="muted">ఆటో ఎక్కినప్పుడు ఈ కోడ్ డ్రైవర్‌కి చెప్పండి. ఎవరికీ డబ్బులు ఇవ్వనక్కర్లేదు. · Tell this code to the driver when you get in.</div></div>`}
           <div class="row"><a class="btn solid" href="tel:+${esc(d.phone || '')}">📞 కాల్ · Call</a><button class="btn" id="pSee">🗺️ ఆటో ఎక్కడ · Where</button></div>
           <button class="btn" id="pCancel">❌ రద్దు · Cancel</button>`;
       } else if (r.status === 'NO_AUTO') {
@@ -533,8 +581,9 @@
     function announce(r) {
       const d = r.driver || {};
       if (r.status === 'SEARCHING') speak(`${placeSay(r.destination_name)} కి ఆటో వెతుకుతున్నాం. కొంచెం ఆగండి.`, 'Finding an auto for you. Please wait.');
-      else if (r.status === 'CONFIRMED') speak(`ఆటో దొరికింది. ${d.name_te || d.name || ''}, ఆటో నంబర్ ${String(d.auto_number || '').split('').join(' ')}. ${d.distance_km != null ? kmSay(d.distance_km) + ' దూరంలో ఉన్నారు.' : ''}`,
-        `Auto found. ${d.name || ''}, auto number ${d.auto_number || ''}.`);
+      else if (r.status === 'CONFIRMED' && r.started) speak('ట్రిప్ ప్రారంభమైంది. సురక్షిత ప్రయాణం.', 'Trip started. Have a safe ride.');
+      else if (r.status === 'CONFIRMED') speak(`ఆటో దొరికింది. ${d.name_te || d.name || ''}, ఆటో నంబర్ ${String(d.auto_number || '').split('').join(' ')}. ${d.distance_km != null ? kmSay(d.distance_km) + ' దూరంలో ఉన్నారు.' : ''} మీ రైడ్ కోడ్ ${String(r.ride_code || '').split('').join(' ')}. ఆటో ఎక్కినప్పుడు డ్రైవర్‌కి చెప్పండి.`,
+        `Auto found. ${d.name || ''}, auto number ${d.auto_number || ''}. Your ride code is ${String(r.ride_code || '').split('').join(' ')}.`);
       else if (r.status === 'NO_AUTO') speak('క్షమించండి, దగ్గరలో ఆటో దొరకలేదు. కొంచెం సేపటి తర్వాత మళ్ళీ ప్రయత్నించండి.', 'Sorry, no auto nearby. Please try again soon.');
       else if (r.status === 'COMPLETED') speak('ప్రయాణం పూర్తయింది. ధన్యవాదాలు.', 'Trip done. Thank you.');
     }
