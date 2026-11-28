@@ -32,6 +32,7 @@ supabase/
   migrations/20261125120000_auto_dispatch.sql   ← review, then run on Supabase
   tests/00_local_supabase_stub.sql              ← local testing only, never run on Supabase
   tests/01_dispatch_rules.sql                   ← local testing only
+  tests/03_whatsapp_drivers.sql                 ← local testing only (drivers working in WhatsApp, migration 13)
 dispatch/                                       ← Node webhook server for the VPS
   src/  test/  .env.example
 ```
