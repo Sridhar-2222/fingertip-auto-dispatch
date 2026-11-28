@@ -13,3 +13,4 @@
 - No secrets in code or chats. The driver app uses only the publishable/anon key.
 - Tests: supabase/tests (local Postgres only), supabase/functions/dispatch/dispatch_test.ts (Deno),
   android-driver/test (browser). Never run test files against the live project.
+- Drivers in WhatsApp (28 Nov 2026, owner: "they finish completing ride through chat bot"): migration 20261128060000_whatsapp_drivers adds the auto_wa_driver_* functions (service role only) used by bot smooth-responder v25 (Rx Fingertip repo, drivers.ts). A driver is a `drivers` row whose phone is the WhatsApp number; online = `wa_online_until` (dispatch_settings.wa_online_hours, default 4), WhatsApp offers wait wa_accept_seconds (default 90). The driver never receives the passenger PIN. Not applied to the live project until the owner says so. Local test: supabase/tests/03_whatsapp_drivers.sql.
